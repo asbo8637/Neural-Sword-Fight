@@ -2,8 +2,8 @@
 #include <random>
 #include <cmath>
 
-// Utility random number generator for angles.
-float randomAngleDelta(float minDelta, float maxDelta)
+// Utility random number generator for small “jitter” (or angle deltas).
+float randomDelta(float minDelta, float maxDelta)
 {
     static std::random_device rd;
     static std::mt19937 gen(rd());
@@ -15,91 +15,102 @@ class Bot
 {
 public:
     Bot(float groundX, float groundY)
-        : m_groundPos(groundX, groundY),
+        : m_footPos(groundX, groundY), // "foot" on the ground
+          m_bodyLength(120.f),         // total height from foot to "head"
+          m_shoulderOffset(40.f),      // how far below the top of the body the shoulder is
           m_armAngle(0.f), m_elbowAngle(0.f), m_wristAngle(0.f),
           m_armLength(100.f), m_forearmLength(80.f), m_handLength(50.f)
     {
         // Set up joint circle shapes (just for visual representation).
         m_jointCircle.setRadius(5.f);
-        m_jointCircle.setOrigin(5.f, 5.f); // so it is centered on its (x,y)
+        m_jointCircle.setOrigin(5.f, 5.f); // center the circle on its coordinate
         m_jointCircle.setFillColor(sf::Color::Red);
+
+        m_head.setRadius(10.f);
+        m_head.setOrigin(10.f, 10.f); // center the circle on its coordinate
+        m_head.setFillColor(sf::Color::Blue);
     }
 
-    // Randomly adjust the angles a tiny bit each frame.
     void update()
     {
-        // For demonstration: jitter each joint angle slightly.
-        m_armAngle += randomAngleDelta(-0.99f, 0.99f);
-        m_elbowAngle += randomAngleDelta(-0.99f, 0.99f);
-        m_wristAngle += randomAngleDelta(-0.3f, 0.3f);
-
-        // If you want to clamp angles, you can do so here, e.g.:
-        //   if (m_armAngle < -1.0f) m_armAngle = -1.0f;
-        //   etc...
+        // Randomly “jitter” the foot horizontally
+        m_footPos.x += randomDelta(-8.f, 8.f);
+        //m_footPos.y = 400.f + 100.f * std::sin(m_footPos.x / 50.f);
+        // Jitter each joint angle slightly
+        m_armAngle += randomDelta(-0.01f, 0.01f);
+        m_elbowAngle += randomDelta(-0.01f, 0.01f);
+        m_wristAngle += randomDelta(-0.01f, 0.01f);
     }
 
     void draw(sf::RenderWindow &window)
     {
-        // 1) Compute joint positions using basic geometry (relative angles).
-        //
-        //    We'll treat m_groundPos as the base (on the x-axis).
-        //    The 'arm' rotates relative to the vertical or horizontal—your choice.
-        //    Then the 'forearm' (elbow) rotates relative to the arm,
-        //    and the 'hand' (wrist) rotates relative to the forearm.
-        //
-        //    For simplicity, assume the arm rotates around the base in a
-        //    “standard math” orientation (0 angle means pointing right).
-        //    You can tweak as needed.
+        // ----------------------------------------------------------
+        // 1) Compute the vertical body: Foot -> Head
+        // ----------------------------------------------------------
+        // The top of the body ("head") is bodyLength above the foot
+        sf::Vector2f headPos = m_footPos - sf::Vector2f(0.f, m_bodyLength);
 
-        // Shoulder joint (top joint) – anchored at groundPos, but we offset upward:
-        // If you prefer the entire bot standing on x-axis, you might shift groundPos
-        // upward by the leg length. For demonstration, just do a “body segment” going up:
-        sf::Vector2f shoulderPos = m_groundPos;
+        // Draw the full body as a green line from foot to head
+        drawLine(window, m_footPos, headPos, sf::Color::Green);
 
-        // Arm end (elbow) relative to shoulder:
-        //   x = shoulder.x + armLength * cos(armAngle)
-        //   y = shoulder.y + armLength * sin(armAngle)
-        // You can choose sin/cos usage depending on how you define “zero angle”.
-        // Here, let’s define 0 radians = horizontal to the right.
-        // If you want vertical alignment, just offset by 90° (M_PI/2).
+        // ----------------------------------------------------------
+        // 2) Compute the shoulder, slightly below the top (“head”)
+        // ----------------------------------------------------------
+        // The shoulder is “shoulderOffset” below the head
+        sf::Vector2f shoulderPos = headPos + sf::Vector2f(0.f, m_shoulderOffset);
+
+        // ----------------------------------------------------------
+        // 3) Compute & draw the arm from the shoulder
+        // ----------------------------------------------------------
         sf::Vector2f elbowPos;
         elbowPos.x = shoulderPos.x + m_armLength * std::cos(m_armAngle);
         elbowPos.y = shoulderPos.y + m_armLength * std::sin(m_armAngle);
 
-        // Wrist joint relative to elbow:
+        float elbowGlobalAngle = m_armAngle + m_elbowAngle;
         sf::Vector2f wristPos;
-        float elbowGlobalAngle = m_armAngle + m_elbowAngle; // “global” elbow angle
         wristPos.x = elbowPos.x + m_forearmLength * std::cos(elbowGlobalAngle);
         wristPos.y = elbowPos.y + m_forearmLength * std::sin(elbowGlobalAngle);
 
-        // “Hand” (or sword tip) if desired. For now just treat it as a short line:
         float wristGlobalAngle = elbowGlobalAngle + m_wristAngle;
         sf::Vector2f handEnd;
         handEnd.x = wristPos.x + m_handLength * std::cos(wristGlobalAngle);
         handEnd.y = wristPos.y + m_handLength * std::sin(wristGlobalAngle);
 
-        // 2) Draw the lines (limbs).
+        // Lines for the arm & “sword”
         drawLine(window, shoulderPos, elbowPos, sf::Color::White);
         drawLine(window, elbowPos, wristPos, sf::Color::White);
-        drawLine(window, wristPos, handEnd, sf::Color::Yellow); // represent sword
+        drawLine(window, wristPos, handEnd, sf::Color::Yellow);
 
-        // 3) Draw the joints as small circles at each position.
+        // ----------------------------------------------------------
+        // 4) Draw the circles at important joints
+        // ----------------------------------------------------------
+        // Foot
+        m_jointCircle.setPosition(m_footPos);
+        window.draw(m_jointCircle);
+
+        // Head
+        m_head.setPosition(headPos);
+        window.draw(m_head);
+
+        // Shoulder
         m_jointCircle.setPosition(shoulderPos);
         window.draw(m_jointCircle);
 
+        // Elbow
         m_jointCircle.setPosition(elbowPos);
         window.draw(m_jointCircle);
 
+        // Wrist
         m_jointCircle.setPosition(wristPos);
         window.draw(m_jointCircle);
 
-        // If you want a small circle at the sword tip:
-        m_jointCircle.setPosition(handEnd);
-        window.draw(m_jointCircle);
+        // Optional: tip of the “sword”
+        // m_jointCircle.setPosition(handEnd);
+        // window.draw(m_jointCircle);
     }
 
 private:
-    // A helper to draw a line using SFML’s VertexArray
+    // Helper to draw a single line segment in SFML
     void drawLine(sf::RenderWindow &window,
                   const sf::Vector2f &start,
                   const sf::Vector2f &end,
@@ -114,9 +125,15 @@ private:
     }
 
 private:
-    sf::Vector2f m_groundPos;
+    // “Foot” position on the ground (jittered each frame)
+    sf::Vector2f m_footPos;
 
-    // Angles in radians. Adjust them in update() to animate.
+    // Total vertical height from foot to head
+    float m_bodyLength;
+    // Shoulder is some pixels below the very top (“head”)
+    float m_shoulderOffset;
+
+    // Arm joint angles
     float m_armAngle;
     float m_elbowAngle;
     float m_wristAngle;
@@ -126,22 +143,19 @@ private:
     float m_forearmLength;
     float m_handLength;
 
-    // Visual representation of each joint
+    // Circles for drawing joints
     sf::CircleShape m_jointCircle;
+    sf::CircleShape m_head;
 };
 
 int main()
 {
-    // Create a window.
-    sf::RenderWindow window(sf::VideoMode(800, 600), "2D Bot Example");
+    sf::RenderWindow window(sf::VideoMode(800, 600), "2D Bot with Body & Offset Shoulder");
     window.setFramerateLimit(60);
 
-    // Create one bot at some position near the bottom.
-    // If you want the “body” to stand on the x-axis, you might place the ground
-    // at y = 500 or so, then the arm angles can be adjusted as needed.
-    Bot bot(400.f, 300.f);
+    // Start the bot around the middle of the screen
+    Bot bot(400.f, 400.f);
 
-    // Main loop
     while (window.isOpen())
     {
         sf::Event event;
@@ -151,7 +165,7 @@ int main()
                 window.close();
         }
 
-        // Update bot logic (randomly tweak angles).
+        // Update bot logic
         bot.update();
 
         // Draw everything
