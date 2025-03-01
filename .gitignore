@@ -1,0 +1,9 @@
+# Ignore everything by default
+*
+
+# Un-ignore this .gitignore file
+!.gitignore
+
+# Un-ignore the entire src folder (and its contents)
+!src/
+!src/**
