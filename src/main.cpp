@@ -6,6 +6,8 @@
 #include <Eigen/dense>
 #include <iostream>
 #include <vector>
+#include <ctime>
+#include <cstdlib>
 
 typedef float Scalar;
 typedef Eigen::MatrixXf Matrix;
@@ -66,7 +68,7 @@ public:
           m_speed(0.2f),
           m_bodyLength(120.f),
           m_shoulderOffset(40.f),
-          m_bodyAngle(0.f),
+          m_bodyAngle(3.1415f),
           m_armAngle(0.f),
           m_elbowAngle(0.f),
           m_wristAngle(0.f),
@@ -74,7 +76,10 @@ public:
           m_forearmLength(60.f),
           m_handLength(80.f),
           m_isAlive(true),
-          m_flipped(flipped)
+          m_flipped(flipped),
+          m_collision_amount(0),
+          m_momentum(0.f, 0.f),
+          m_angle_momentum(0)
     {
         // Circles for joints
         m_jointCircle.setRadius(5.f);
@@ -92,8 +97,14 @@ public:
 
     // New update method: we pass in 5 values (0..1)
     // [0] => foot X, [1] => bodyAngle, [2] => armAngle, [3] => elbowAngle, [4] => wristAngle
-    void updateFromNN(const std::array<float, 4>& controls)
+    void updateFromNN(const std::array<float, 5>& controls)
     {
+        sf::Vector2f last_sword_pos = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
+        float last_wrist_angle = m_wristAngle;
+        float last_elbow_angle = m_elbowAngle;
+        float last_arm_angle = m_armAngle;
+        float last_body_angle = m_bodyAngle;
+        sf::Vector2f m_last_foot_pos = m_footPos;
         if (!m_isAlive)
             return;
         
@@ -107,14 +118,14 @@ public:
         float direction = m_flipped ? 1.0f : -1.0f;
         
         // 1) Update foot x position.
-        m_footPos.x -= 2.0f * direction;
+        m_footPos.x -= 2.0f * direction * controls[4];
         
         float Pi = 3.14159f;
         
         // 2) Update body angle.
         // First, update and clamp the angle.
         // Let's assume the desired unclipped range for body angle is [0.3*Pi, 0.7*Pi]
-        m_bodyAngle = std::max(-1.3f * Pi, std::min(1.3f * Pi, m_bodyAngle + direction*controls[0] * m_speed));
+        m_bodyAngle = std::max(0.9f * Pi, std::min(1.1f * Pi, m_bodyAngle + direction*controls[0] * m_speed));
         
         // For arm angle:
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
@@ -129,6 +140,14 @@ public:
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
         m_wristAngle = std::max(-0.4f * Pi, std::min(-0.2f * Pi, m_wristAngle + controls[3] * m_speed));
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
+
+        m_momentum = sf::Vector2f(m_momentum.x*0.9, m_momentum.y*0.9);
+        m_momentum += getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
+        //float dx = (m_last_foot_pos.x - m_footPos.x) * direction;
+        float m_angle_momentum = (m_armAngle-last_arm_angle) + 
+        (m_elbowAngle-last_elbow_angle) + 
+        (m_wristAngle-last_wrist_angle) + 
+        (m_bodyAngle-last_body_angle);
     }
 
     void kill() { m_isAlive = false; }
@@ -136,10 +155,10 @@ public:
     sf::Vector2f getFootPos() const { return m_footPos; }
 
     // Knockback
-    void applyKnockback(const sf::Vector2f &disp)
+    void applyKnockback(float disp)
     {
         if (m_isAlive)
-            m_footPos += disp;
+            m_footPos.x -= disp;
     }
 
     // For collisions: line foot->head
@@ -157,6 +176,14 @@ public:
         sf::Vector2f swordTip = getSwordTip(wristPos);
         outStart = wristPos;
         outEnd = swordTip;
+    }
+
+    sf::Vector2f getMomentum(){
+        return m_momentum;
+    }
+
+    float getAngleMomentum(){
+        return m_angle_momentum;
     }
 
     float getSwordBodyAngle() const
@@ -202,6 +229,10 @@ public:
         return { normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle };
     }
     
+    int getCollisionAmount() {
+        m_collision_amount++;
+        return m_collision_amount;
+    }
     
     std::array<float, 6> getEnemyValues() const {
         sf::Vector2f swordStart, swordEnd;
@@ -360,6 +391,9 @@ private:
 
     bool m_isAlive;
     bool m_flipped;
+    int m_collision_amount;
+    sf::Vector2f m_momentum;
+    float m_angle_momentum;
 
     // Visuals
     sf::CircleShape m_jointCircle;
@@ -444,6 +478,15 @@ public:
         return 1.0f / (1.0f + std::exp(-x));
     }
 
+    // Clone method to create a copy of the neural network.
+    neural clone() const {
+        neural copy(this->topology, this->evolutionRate, this->mutationRate);
+        for (size_t i = 0; i < this->weights.size(); ++i) {
+            *copy.weights[i] = *this->weights[i];
+        }
+        return copy;
+    }
+
     // Members
     std::vector<Matrix*> weights;
     std::vector<RowVector*> neuronLayers;
@@ -474,13 +517,14 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float forceA = std::fabs(std::sin(angleA));
         float forceB = std::fabs(std::sin(angleB));
 
-        float knockbackScale = 20.f;
-        sf::Vector2f dirAB = B.getFootPos() - A.getFootPos();
-        sf::Vector2f normAB = normalize(dirAB);
-        sf::Vector2f normBA = -normAB;
-
-        B.applyKnockback(normAB * (forceA * knockbackScale));
-        A.applyKnockback(normBA * (forceB * knockbackScale));
+        int collisions = A.getCollisionAmount();
+        float knockbackScale = collisions*0.05f;
+        float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
+        float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
+        float aAom = A.getAngleMomentum();
+        float bAom = B.getAngleMomentum();
+        B.applyKnockback(std::max(20.f, (forceA * knockbackScale) * aMom * aMom * aAom * aAom));
+        A.applyKnockback(-std::max(20.f, (forceB * knockbackScale) * bMom * bMom * bAom * bAom));
     }
 }
 
@@ -537,14 +581,15 @@ Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB){
 ////////////////////////////////////////////////////////////
 int main()
 {
-    int afterRounds=0;
+    srand(static_cast<unsigned int>(time(0)));
+    int afterRounds=1000;
     int rounds=0;
     int lastLoss=0; 
     sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
-    window.setFramerateLimit(100);
+    window.setFramerateLimit(30);
 
-    std::vector<uint> topology = {11, 100, 100, 4};
-    Scalar evolutionRate = 1;
+    std::vector<uint> topology = {11, 100, 100, 5};
+    Scalar evolutionRate = 0.1;
     Scalar mutationRate = 0.5;
     neural net1(topology, evolutionRate, mutationRate);
     neural net2(topology, evolutionRate, mutationRate);
@@ -577,8 +622,8 @@ int main()
             net1.propagateForward(inputForNet1);
             std::vector<Scalar> output = net1.getOutput();
             // Convert the output to a std::array<float, 5>
-            std::array<float, 4> controlsA;
-            std::copy_n(output.begin(), 4, controlsA.begin());
+            std::array<float, 5> controlsA;
+            std::copy_n(output.begin(), 5, controlsA.begin());
             botA.updateFromNN(controlsA);
         }
         else{
@@ -587,10 +632,9 @@ int main()
             rounds+=1;
             std::cout << "Bot B wins, round: " << rounds << std::endl;
             if(lastLoss!=1){
-                net1=net2;
+                net1=net2.clone();;
+                lastLoss=1;
             }
-            net1.updateWeights();
-            net1.updateWeights();
             net1.updateWeights();
             continue;
         }
@@ -600,8 +644,8 @@ int main()
             net2.propagateForward(inputForNet2);
             std::vector<Scalar> output = net2.getOutput();
             // Convert the output to a std::array<float, 5>
-            std::array<float, 4> controlsB;
-            std::copy_n(output.begin(), 4, controlsB.begin());
+            std::array<float, 5> controlsB;
+            std::copy_n(output.begin(), 5, controlsB.begin());
             botB.updateFromNN(controlsB);
         }
         else{
@@ -609,9 +653,10 @@ int main()
             botB = Bot(650.f, 400.f, true);
             rounds+=1;
             std::cout << "Bot A wins, round: " << rounds << std::endl;
-            net2=net1;
-            net2.updateWeights();
-            net2.updateWeights();
+            if(lastLoss!=2){
+                net2 = net1.clone();
+                lastLoss=2;
+            }
             net2.updateWeights();
             continue;
         }
