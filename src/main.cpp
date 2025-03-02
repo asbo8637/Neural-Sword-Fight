@@ -63,7 +63,7 @@ public:
     // Constructor
     Bot(float footX, float footY, bool flipped = false)
         : m_footPos(footX, footY),
-          m_speed(0.3f),
+          m_speed(0.2f),
           m_bodyLength(120.f),
           m_shoulderOffset(40.f),
           m_bodyAngle(0.f),
@@ -108,19 +108,19 @@ public:
             isflipped = m_speed;
         // We can keep footPos.y fixed or also map it if desired:
         // m_footPos.y = <some constant> or from controls as well
-        m_footPos.x += controls[0] * 5*isflipped;
+        m_footPos.x += 5*isflipped;
         // 2) Map bodyAngle from [0..1] to e.g. [-π/2..+π/2]
-        float halfPi = 3.14159f * 0.5f;
+        float halfPi = 3.14159f * 0.25f;
 
-        m_bodyAngle = std::max(-halfPi, std::min(halfPi, m_bodyAngle+controls[1]*isflipped)); // clamp
+        m_bodyAngle = std::max(-halfPi, std::min(halfPi, 0.5f*m_bodyAngle+controls[0]*isflipped)); // clamp
 
-        m_armAngle += controls[2] * isflipped;
+        m_armAngle = std::max(halfPi, std::min(3.f*halfPi, m_armAngle+controls[1] * isflipped));
 
         // 4) elbowAngle => similarly
-        m_elbowAngle += controls[3] * isflipped;
+        m_elbowAngle += controls[2] * isflipped;
 
         // 5) wristAngle => similarly
-        m_wristAngle += controls[4] * isflipped;
+        m_wristAngle += controls[3] * isflipped;
     }
 
     void kill() { m_isAlive = false; }
@@ -159,6 +159,71 @@ public:
         sf::Vector2f swordVec = swordEnd - swordStart;
         return angleBetween(bodyVec, swordVec);
     }
+
+    std::array<float, 5> getAllyValues() const {
+        // Adjust the foot x position if m_flipped.
+        float footX = m_footPos.x;
+        if (m_flipped) {
+            footX = 800 - footX;
+        }
+        // Normalize footX from [100, 700] to [0, 1].
+        float normFootX = (footX - 100.0f) / 600.0f;
+    
+        // Determine sign multiplier for angles.
+        float sign = m_flipped ? -1.0f : 1.0f;
+    
+        // Helper lambda to normalize an angle.
+        auto normalizeAngle = [](float angle) -> float {
+            // Ensure angle is in [0, 2pi].
+            if (angle < 0)
+                angle += 2.0f * 3.14159f;
+            return angle / (2.0f * 3.14159f);
+        };
+    
+        float normBodyAngle  = normalizeAngle(m_bodyAngle  * sign);
+        float normArmAngle   = normalizeAngle(m_armAngle   * sign);
+        float normElbowAngle = normalizeAngle(m_elbowAngle * sign);
+        float normWristAngle = normalizeAngle(m_wristAngle * sign);
+    
+        // Return ally values as [normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle]
+        return { normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle };
+    }
+    
+    std::array<float, 6> getEnemyValues() const {
+        sf::Vector2f swordStart, swordEnd;
+        getSwordLine(swordStart, swordEnd);
+    
+        // For enemy values, if m_flipped is false then flip the x values.
+        float footX = m_footPos.x;
+        float swordStartX = swordStart.x;
+        float swordEndX = swordEnd.x;
+        if (!m_flipped) {
+            footX = 800 - footX;
+            swordStartX = 800 - swordStartX;
+            swordEndX = 800 - swordEndX;
+        }
+        // Normalize x values from [100,700] to [0,1]
+        float normFootX = (footX - 100.0f) / 600.0f;
+        float normSwordStartX = (swordStartX - 100.0f) / 600.0f;
+        float normSwordEndX   = (swordEndX - 100.0f) / 600.0f;
+    
+        // Normalize the y values from [300,600] to [0,1]
+        float normSwordStartY = (swordStart.y - 300.0f) / 300.0f;
+        float normSwordEndY   = (swordEnd.y   - 300.0f) / 300.0f;
+    
+        // Normalize the body angle as before.
+        float normBodyAngle;
+        {
+            float angle = m_bodyAngle;
+            if (angle < 0)
+                angle += 2.0f * 3.14159f;
+            normBodyAngle = angle / (2.0f * 3.14159f);
+        }
+    
+        // Return enemy values as [normFootX, normBodyAngle, normSwordStartX, normSwordStartY, normSwordEndX, normSwordEndY]
+        return { normFootX, normBodyAngle, normSwordStartX, normSwordStartY, normSwordEndX, normSwordEndY };
+    }    
+    
 
     void draw(sf::RenderWindow &window)
     {
@@ -416,33 +481,49 @@ void handleCollisions(Bot &A, Bot &B)
     checkSwordHitsBody(B, A);
 }
 
+
+template <size_t N>
+Eigen::RowVectorXf arrayToEigen(const std::array<float, N>& arr) {
+    Eigen::RowVectorXf vec(N);
+    for (size_t i = 0; i < N; ++i) {
+        vec(i) = arr[i];
+    }
+    return vec;
+}
+
+Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB){
+    // For net1: combine botA's ally values with botB's enemy values.
+    auto botAAlly = botA.getAllyValues();   // std::array<float, 5>
+    auto botBEnemy = botB.getEnemyValues();   // std::array<float, 6>
+
+    // Convert each array to an Eigen row vector.
+    Eigen::RowVectorXf vecA = arrayToEigen(botAAlly);
+    Eigen::RowVectorXf vecB = arrayToEigen(botBEnemy);
+
+    Eigen::RowVectorXf inputForNet(11);
+    inputForNet << vecA, vecB;  // Concatenates the two vectors
+    return inputForNet;
+}
+
 ////////////////////////////////////////////////////////////
 // Main
 ////////////////////////////////////////////////////////////
 int main()
 {
+    int afterRounds=10000;
+    int rounds=0;
     sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
     window.setFramerateLimit(60);
 
-    std::vector<uint> topology = {11, 100, 5};
+    std::vector<uint> topology = {11, 100, 100, 4};
     Scalar evolutionRate = 0.005;
-    Scalar mutationRate = 0.1;
-    neural net(topology, evolutionRate, mutationRate);
-
-    std::vector<uint> topology = {11, 100, 5};
-    Scalar evolutionRate = 0.005;
-    Scalar mutationRate = 0.1;
-    neural net(topology, evolutionRate, mutationRate);
+    Scalar mutationRate = 0.4;
+    neural net1(topology, evolutionRate, mutationRate);
+    neural net2(topology, evolutionRate, mutationRate);
 
     // Create two bots
     Bot botA(150.f, 400.f, false);
     Bot botB(650.f, 400.f, true);
-
-    // For demonstration, a simple array of 5 control values [0..1]
-    // that we will randomize each frame to show them moving.
-    // In a real neural-net scenario, you'd get these from your forward pass.
-    std::array<float, 5> controlsA = {{0.f, 0.f, 0.f, 0.f, 0.f}};
-    std::array<float, 5> controlsB = {{1.f, 1.f, 1.f, 1.f, 1.f}};
 
     // Example "walls"
     float leftWallX = 50.f;
@@ -462,10 +543,42 @@ int main()
         // In your real code, you'd get these from a neural net forward pass:
 
         // Update each bot with its 5 new control values
-        if (botA.isAlive())
+        if (botA.isAlive()){
+            Eigen::RowVectorXf inputForNet1(11);
+            inputForNet1 = getInputForBot(botA, botB);
+            net1.propagateForward(inputForNet1);
+            std::vector<Scalar> output = net1.getOutput();
+            // Convert the output to a std::array<float, 5>
+            std::array<float, 5> controlsA;
+            std::copy_n(output.begin(), 5, controlsA.begin());
             botA.updateFromNN(controlsA);
-        if (botB.isAlive())
+        }
+        else{
+            botA = Bot(150.f, 400.f, false);
+            botB = Bot(650.f, 400.f, true);
+            rounds+=1;
+            std::cout << "Bot B wins, round: " << rounds << std::endl;
+            net1.updateWeights();
+            continue;
+        }
+        if (botB.isAlive()){
+            Eigen::RowVectorXf inputForNet2(11);
+            inputForNet2 = getInputForBot(botB, botA);
+            net2.propagateForward(inputForNet2);
+            std::vector<Scalar> output = net2.getOutput();
+            // Convert the output to a std::array<float, 5>
+            std::array<float, 5> controlsB;
+            std::copy_n(output.begin(), 5, controlsB.begin());
             botB.updateFromNN(controlsB);
+        }
+        else{
+            botA = Bot(150.f, 400.f, false);
+            botB = Bot(650.f, 400.f, true);
+            rounds+=1;
+            std::cout << "Bot A wins, round: " << rounds << std::endl;
+            net2.updateWeights();
+            continue;
+        }
 
         // Check collisions
         handleCollisions(botA, botB);
@@ -504,7 +617,7 @@ int main()
         rw[1].color = sf::Color::Magenta;
         window.draw(rw);
 
-        window.display();
+        if(rounds>=afterRounds){window.display();}
     }
 
     return 0;
