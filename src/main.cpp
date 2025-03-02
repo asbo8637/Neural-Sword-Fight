@@ -355,11 +355,21 @@ public:
         // Forward propagation: multiply by weights and apply activation function.
         for (uint i = 1; i < topology.size(); i++) {
             (*neuronLayers[i]) = (*neuronLayers[i - 1]) * (*weights[i - 1]);
-            neuronLayers[i]->block(0, 0, 1, topology[i])
-                = neuronLayers[i]->block(0, 0, 1, topology[i])
-                    .unaryExpr([this](Scalar x) { return activationFunction(x); });
+            neuronLayers[i]->block(0, 0, 1, topology[i]) = neuronLayers[i]->block(0, 0, 1, topology[i]).unaryExpr([this](Scalar x) { return activationFunction(x); });
         }
     }
+
+    std::vector<Scalar> getOutput() const {
+        // The output layer is the last neuron layer.
+        const RowVector* outputLayer = neuronLayers.back();
+        std::vector<Scalar> output(topology.back());
+        for (uint i = 0; i < topology.back(); i++) {
+            // Multiply by 2 and subtract 1 to transform range from [0,1] to [-1,1]
+            output[i] = 2 * (*outputLayer)(i) - 1;
+        }
+        return output;
+    }
+    
 
     // Mutate weights based on a mutation probability.
     void updateWeights() {
