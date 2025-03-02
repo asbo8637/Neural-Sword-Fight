@@ -6,6 +6,8 @@
 #include <Eigen/dense>
 #include <iostream>
 #include <vector>
+#include <ctime>
+#include <cstdlib>
 
 typedef float Scalar;
 typedef Eigen::MatrixXf Matrix;
@@ -60,21 +62,24 @@ bool linesIntersect(const sf::Vector2f &p1, const sf::Vector2f &p2,
 class Bot
 {
 public:
-    // Constructor
-    Bot(float footX, float footY, bool flipped = false)
+    // Original constructor (unchanged)
+    Bot(float footX, float footY, float sword, bool flipped = false)
         : m_footPos(footX, footY),
-          m_speed(0.2f),
+          m_speed(0.05f),
           m_bodyLength(120.f),
           m_shoulderOffset(40.f),
-          m_bodyAngle(0.f),
+          m_bodyAngle(3.1415f),
           m_armAngle(0.f),
           m_elbowAngle(0.f),
           m_wristAngle(0.f),
-          m_armLength(50.f),
-          m_forearmLength(60.f),
-          m_handLength(80.f),
+          m_armLength(30.f),
+          m_forearmLength(40.f),
+          m_handLength(sword),
           m_isAlive(true),
-          m_flipped(flipped)
+          m_flipped(flipped),
+          m_collision_amount(1),
+          m_momentum(0.f, 0.f),
+          m_angle_momentum(0)
     {
         // Circles for joints
         m_jointCircle.setRadius(5.f);
@@ -90,45 +95,100 @@ public:
             m_armAngle = 3.14159f; // ~180 deg
     }
 
-    // New update method: we pass in 5 values (0..1)
-    // [0] => foot X, [1] => bodyAngle, [2] => armAngle, [3] => elbowAngle, [4] => wristAngle
-    void updateFromNN(const std::array<float, 4>& controls)
+    // *** NEW Overloaded Constructor ***
+    // Allows specifying speed, body length, and sword length at creation
+    Bot(float footX, float footY, float sword, float spd, float bodyLen, bool flipped)
+        : m_footPos(footX, footY),
+          m_speed(spd),
+          m_bodyLength(bodyLen),
+          m_shoulderOffset(40.f),
+          m_bodyAngle(3.1415f),
+          m_armAngle(0.f),
+          m_elbowAngle(0.f),
+          m_wristAngle(0.f),
+          m_armLength(30.f),
+          m_forearmLength(40.f),
+          m_handLength(sword),
+          m_isAlive(true),
+          m_flipped(flipped),
+          m_collision_amount(1),
+          m_momentum(0.f, 0.f),
+          m_angle_momentum(0)
     {
+        // Circles for joints
+        m_jointCircle.setRadius(5.f);
+        m_jointCircle.setOrigin(5.f, 5.f);
+        m_jointCircle.setFillColor(sf::Color::Red);
+
+        m_head.setRadius(10.f);
+        m_head.setOrigin(10.f, 10.f);
+        m_head.setFillColor(sf::Color::Blue);
+
+        // If flipped, rotate the entire arm 180 degrees
+        if (m_flipped)
+            m_armAngle = 3.14159f; // ~180 deg
+    }
+
+    float randomMovement()
+    {
+        float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        return -r * 0.5f + 0.2f;
+    }
+    // New update method: we pass in 5 values (0..1)
+    // [0] => foot X, [1] => armAngle, [2] => elbowAngle, [3] => wristAngle, [4] => ???
+    void updateFromNN(const std::array<float, 5> &controls)
+    {
+        sf::Vector2f last_sword_pos = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
+        last_sword_pos = sf::Vector2f(last_sword_pos.x - m_footPos.x, last_sword_pos.y);
+        float last_wrist_angle = m_wristAngle;
+        float last_elbow_angle = m_elbowAngle;
+        float last_arm_angle = m_armAngle;
+        float last_body_angle = m_bodyAngle;
         if (!m_isAlive)
             return;
-        
+
         // Define boundaries for the foot's x position.
         const float minX = 100.f;
         const float maxX = 700.f;
-        
+
         // Determine foot movement direction.
-        // If m_flipped is true, we want the bot to move right (positive x)
-        // so that it faces the other bot; otherwise, move left.
         float direction = m_flipped ? 1.0f : -1.0f;
-        
-        // 1) Update foot x position.
-        m_footPos.x -= 2.0f * direction;
-        
+
+        // (1) Move footX
+        m_footPos.x -= 1.5f * direction;
+
         float Pi = 3.14159f;
-        
-        // 2) Update body angle.
-        // First, update and clamp the angle.
-        // Let's assume the desired unclipped range for body angle is [0.3*Pi, 0.7*Pi]
-        m_bodyAngle = std::max(-1.3f * Pi, std::min(1.3f * Pi, m_bodyAngle + direction*controls[0] * m_speed));
-        
-        // For arm angle:
+
+        // (2) For arm angle:
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
-        m_armAngle = std::max(0.4f * Pi, std::min(0.6f * Pi, m_armAngle + controls[1] * m_speed));
+        m_armAngle = std::max(0.2f * Pi, std::min(0.6f * Pi, m_armAngle + controls[1] * m_speed));
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
 
-        // For elbow angle:
+        // (3) For elbow angle:
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
-        m_elbowAngle = std::max(0.f * Pi, std::min(0.2f * Pi, m_elbowAngle + controls[2] * m_speed));
+        m_elbowAngle = std::max(0.f * Pi, std::min(0.4f * Pi, m_elbowAngle + controls[2] * m_speed));
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
-        // For wrist angle:
+
+        // (4) For wrist angle:
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
-        m_wristAngle = std::max(-0.4f * Pi, std::min(-0.2f * Pi, m_wristAngle + controls[3] * m_speed));
+        m_wristAngle = std::max(-0.4f * Pi, std::min(0.2f * Pi, m_wristAngle + controls[3] * m_speed));
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
+
+        sf::Vector2f newTip = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
+        newTip = sf::Vector2f(newTip.x - m_footPos.x, newTip.y);
+        m_momentum += newTip - last_sword_pos;
+        m_angle_momentum = 100 *
+                               4 * std::abs(m_armAngle - last_arm_angle) +
+                           3 * std::abs(m_elbowAngle - last_elbow_angle) +
+                           std::abs(m_wristAngle - last_wrist_angle) +
+                           10 * std::abs(m_bodyAngle - last_body_angle);
+    }
+
+    void launch_sword()
+    {
+        m_elbowAngle *= 0.96f;
+        m_wristAngle *= 0.96f;
+        m_armAngle *= 0.99f;
     }
 
     void kill() { m_isAlive = false; }
@@ -136,10 +196,10 @@ public:
     sf::Vector2f getFootPos() const { return m_footPos; }
 
     // Knockback
-    void applyKnockback(const sf::Vector2f &disp)
+    void applyKnockback(float disp)
     {
         if (m_isAlive)
-            m_footPos += disp;
+            m_footPos.x -= disp;
     }
 
     // For collisions: line foot->head
@@ -159,85 +219,100 @@ public:
         outEnd = swordTip;
     }
 
-    float getSwordBodyAngle() const
+    sf::Vector2f getMomentum()
     {
-        sf::Vector2f bodyVec = getHeadPos() - m_footPos;
-        sf::Vector2f swordStart, swordEnd;
-        getSwordLine(swordStart, swordEnd);
-        sf::Vector2f swordVec = swordEnd - swordStart;
-        return angleBetween(bodyVec, swordVec);
+        return m_momentum;
     }
 
-    std::array<float, 5> getAllyValues() const {
-        // Adjust the foot x position if m_flipped.
+    float getAngleMomentum()
+    {
+        return m_angle_momentum;
+    }
+
+    float getSwordBodyAngle() const
+    {
+        sf::Vector2f swordStart, swordEnd;
+        getSwordLine(swordStart, swordEnd);
+        return angleBetween(swordEnd, swordStart);
+    }
+
+    std::array<float, 8> getAllyValues() const
+    {
         float footX = m_footPos.x;
         float temp_bodyAngle = m_bodyAngle;
         float temp_armAngle = m_armAngle;
         float temp_elbowAngle = m_elbowAngle;
         float temp_wristAngle = m_wristAngle;
-        if (m_flipped) {
+        if (m_flipped)
+        {
             footX = 800 - footX;
             float pi = 3.14159f;
-            temp_bodyAngle = - m_bodyAngle;
-            temp_armAngle = - m_armAngle;
-            temp_elbowAngle =  - m_elbowAngle;
-            temp_wristAngle = - m_wristAngle;
+            temp_bodyAngle = -m_bodyAngle;
+            temp_armAngle = -m_armAngle;
+            temp_elbowAngle = -m_elbowAngle;
+            temp_wristAngle = -m_wristAngle;
         }
         // Normalize footX from [100, 700] to [0, 1].
         float normFootX = (footX - 100.0f) / 600.0f;
-        
-        // Helper lambda to normalize an angle.
-        auto normalizeAngle = [](float angle) -> float {
+
+        auto normalizeAngle = [](float angle) -> float
+        {
             if (angle < 0)
                 angle += 2.0f * 3.14159f;
             return angle / (2.0f * 3.14159f);
         };
-        
-        float normBodyAngle  = normalizeAngle(temp_bodyAngle);
-        float normArmAngle   = normalizeAngle(temp_armAngle);
+
+        float normBodyAngle = normalizeAngle(temp_bodyAngle);
+        float normArmAngle = normalizeAngle(temp_armAngle);
         float normElbowAngle = normalizeAngle(temp_elbowAngle);
         float normWristAngle = normalizeAngle(temp_wristAngle);
-        
-        // Return ally values as [normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle]
-        return { normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle };
+
+        return {normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle,
+                m_momentum.x, m_momentum.y, static_cast<float>(m_collision_amount)};
     }
-    
-    
-    std::array<float, 6> getEnemyValues() const {
-        sf::Vector2f swordStart, swordEnd;
-        getSwordLine(swordStart, swordEnd);
-    
-        // For enemy values, if m_flipped is false then flip the x values.
+
+    int getCollisionAmount() const
+    {
+        return m_collision_amount;
+    }
+    void incrementCollisionAmount()
+    {
+        m_collision_amount += 0.5f;
+    }
+
+    std::array<float, 7> getEnemyValues() const
+    {
         float footX = m_footPos.x;
-        float swordStartX = swordStart.x;
-        float swordEndX = swordEnd.x;
-        if (!m_flipped) {
-            footX = 800 - footX;
-            swordStartX = 800 - swordStartX;
-            swordEndX = 800 - swordEndX;
-        }
-        // Normalize x values from [100,700] to [0,1]
-        float normFootX = (footX - 100.0f) / 600.0f;
-        float normSwordStartX = (swordStartX - 100.0f) / 600.0f;
-        float normSwordEndX   = (swordEndX - 100.0f) / 600.0f;
-    
-        // Normalize the y values from [300,600] to [0,1]
-        float normSwordStartY = (swordStart.y - 300.0f) / 300.0f;
-        float normSwordEndY   = (swordEnd.y   - 300.0f) / 300.0f;
-    
-        // Normalize the body angle as before.
-        float normBodyAngle;
+        float temp_bodyAngle = m_bodyAngle;
+        float temp_armAngle = m_armAngle;
+        float temp_elbowAngle = m_elbowAngle;
+        float temp_wristAngle = m_wristAngle;
+        if (m_flipped)
         {
-            float angle = m_bodyAngle;
+            footX = 800 - footX;
+            float pi = 3.14159f;
+            temp_bodyAngle = -m_bodyAngle;
+            temp_armAngle = -m_armAngle;
+            temp_elbowAngle = -m_elbowAngle;
+            temp_wristAngle = -m_wristAngle;
+        }
+        float normFootX = (footX - 100.0f) / 600.0f;
+
+        auto normalizeAngle = [](float angle) -> float
+        {
             if (angle < 0)
                 angle += 2.0f * 3.14159f;
-            normBodyAngle = angle / (2.0f * 3.14159f);
-        }
-    
-        // Return enemy values as [normFootX, normBodyAngle, normSwordStartX, normSwordStartY, normSwordEndX, normSwordEndY]
-        return { normFootX, normBodyAngle, normSwordStartX, normSwordStartY, normSwordEndX, normSwordEndY };
-    }    
-    
+            return angle / (2.0f * 3.14159f);
+        };
+
+        float normBodyAngle = normalizeAngle(temp_bodyAngle);
+        float normArmAngle = normalizeAngle(temp_armAngle);
+        float normElbowAngle = normalizeAngle(temp_elbowAngle);
+        float normWristAngle = normalizeAngle(temp_wristAngle);
+
+        return {normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle,
+                m_momentum.x, m_momentum.y};
+    }
 
     void draw(sf::RenderWindow &window)
     {
@@ -276,16 +351,13 @@ public:
     }
 
 private:
-    // Compute the head position assuming m_bodyAngle is measured from the horizontal.
     sf::Vector2f getHeadPos() const
     {
-        // With 0 radians pointing to the right, use cosine for x and sine for y.
         float dx = m_bodyLength * std::sin(m_bodyAngle);
         float dy = m_bodyLength * std::cos(m_bodyAngle);
         return sf::Vector2f(m_footPos.x + dx, m_footPos.y + dy);
     }
 
-    // Compute the shoulder position along the line from head to foot.
     sf::Vector2f getShoulderPos() const
     {
         sf::Vector2f headPos = getHeadPos();
@@ -294,42 +366,31 @@ private:
         if (len < 1e-6f)
             return headPos;
         sf::Vector2f unitDir(footDir.x / len, footDir.y / len);
-        // Offset the head position toward the foot by the shoulder offset.
         return headPos + unitDir * m_shoulderOffset;
     }
 
-    // Compute the elbow position based on the shoulder position and m_armAngle.
-    // m_armAngle is now measured from the horizontal.
     sf::Vector2f getElbowPos(const sf::Vector2f &shoulderPos) const
     {
         return sf::Vector2f(
             shoulderPos.x + m_armLength * std::sin(m_armAngle),
-            shoulderPos.y + m_armLength * std::cos(m_armAngle)
-        );
+            shoulderPos.y + m_armLength * std::cos(m_armAngle));
     }
 
-    // Compute the wrist position by adding the forearm vector.
-    // The global angle at the elbow is m_armAngle + m_elbowAngle.
     sf::Vector2f getWristPos(const sf::Vector2f &elbowPos) const
     {
         float elbowGlobalAngle = m_armAngle + m_elbowAngle;
         return sf::Vector2f(
             elbowPos.x + m_forearmLength * std::sin(elbowGlobalAngle),
-            elbowPos.y + m_forearmLength * std::cos(elbowGlobalAngle)
-        );
+            elbowPos.y + m_forearmLength * std::cos(elbowGlobalAngle));
     }
 
-    // Compute the sword tip position by extending from the wrist.
-    // The global angle at the wrist is m_armAngle + m_elbowAngle + m_wristAngle.
     sf::Vector2f getSwordTip(const sf::Vector2f &wristPos) const
     {
         float wristGlobalAngle = m_armAngle + m_elbowAngle + m_wristAngle;
         return sf::Vector2f(
             wristPos.x + m_handLength * std::sin(wristGlobalAngle),
-            wristPos.y + m_handLength * std::cos(wristGlobalAngle)
-        );
+            wristPos.y + m_handLength * std::cos(wristGlobalAngle));
     }
-
 
     void drawLine(sf::RenderWindow &window,
                   const sf::Vector2f &start,
@@ -346,7 +407,7 @@ private:
 
 private:
     // Bot properties
-    sf::Vector2f m_footPos; // foot location
+    sf::Vector2f m_footPos;
     float m_speed;
     float m_bodyLength;
     float m_shoulderOffset;
@@ -360,77 +421,114 @@ private:
 
     bool m_isAlive;
     bool m_flipped;
+    int m_collision_amount;
+    sf::Vector2f m_momentum;
+    float m_angle_momentum;
 
     // Visuals
     sf::CircleShape m_jointCircle;
     sf::CircleShape m_head;
 };
 
-class neural {
+class neural
+{
 public:
-    // Constructor with default parameters
-    neural(std::vector<uint> topology, Scalar evolutionRate = 0.005f, Scalar mutationRate = 0.1f) {
+    // Constructor with default parameters.
+    neural(std::vector<uint> topology, Scalar evolutionRate = 0.005f, Scalar mutationRate = 0.1f)
+    {
         this->topology = topology;
-        this->mutationRate = mutationRate;
         this->evolutionRate = evolutionRate;
-        for (uint i = 0; i < topology.size(); i++) {
-            // For non-output layers, add one extra neuron for bias.
-            if (i == topology.size() - 1)
-                neuronLayers.push_back(new RowVector(topology[i]));
-            else
-                neuronLayers.push_back(new RowVector(topology[i] + 1));
+        this->mutationRate = mutationRate;
+        allocateLayersAndWeights();
+    }
 
-            // Set the bias neuron to 1.0 for non-output layers.
-            if (i != topology.size() - 1)
-                neuronLayers.back()->coeffRef(topology[i]) = 1.0f;
+    // Copy constructor (deep copy)
+    neural(const neural &other)
+    {
+        topology = other.topology;
+        evolutionRate = other.evolutionRate;
+        mutationRate = other.mutationRate;
+        allocateLayersAndWeights();
+        for (size_t i = 0; i < weights.size(); i++)
+        {
+            *weights[i] = *other.weights[i];
+        }
+    }
 
-            // Initialize weights matrix (starting from the second layer)
-            if (i > 0) {
-                if (i != topology.size() - 1) {
-                    // Hidden layers: include bias for both previous and current layer.
-                    weights.push_back(new Matrix(topology[i - 1] + 1, topology[i] + 1));
-                    *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i] + 1);
-                } else {
-                    // Output layer: previous layer includes bias; output layer does not.
-                    weights.push_back(new Matrix(topology[i - 1] + 1, topology[i]));
-                    *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i]);
-                }
+    // Copy assignment operator (deep copy)
+    neural &operator=(const neural &other)
+    {
+        if (this != &other)
+        {
+            for (Matrix *w : weights)
+            {
+                delete w;
+            }
+            for (RowVector *layer : neuronLayers)
+            {
+                delete layer;
+            }
+            weights.clear();
+            neuronLayers.clear();
+
+            topology = other.topology;
+            evolutionRate = other.evolutionRate;
+            mutationRate = other.mutationRate;
+            allocateLayersAndWeights();
+            for (size_t i = 0; i < weights.size(); i++)
+            {
+                *weights[i] = *other.weights[i];
             }
         }
+        return *this;
     }
 
-    // Forward propagation: calculates activations through the network.
-    void propagateForward(RowVector& input) {
-        // Set the input layer (excluding the bias element)
+    ~neural()
+    {
+        for (Matrix *w : weights)
+            delete w;
+        for (RowVector *layer : neuronLayers)
+            delete layer;
+    }
+
+    // Forward propagation
+    void propagateForward(RowVector &input)
+    {
         neuronLayers.front()->block(0, 0, 1, neuronLayers.front()->size() - 1) = input;
-    
-        // Forward propagation: multiply by weights and apply activation function.
-        for (uint i = 1; i < topology.size(); i++) {
+
+        for (size_t i = 1; i < topology.size(); i++)
+        {
             (*neuronLayers[i]) = (*neuronLayers[i - 1]) * (*weights[i - 1]);
-            neuronLayers[i]->block(0, 0, 1, topology[i]) = neuronLayers[i]->block(0, 0, 1, topology[i]).unaryExpr([this](Scalar x) { return activationFunction(x); });
+            neuronLayers[i]->block(0, 0, 1, topology[i]) =
+                neuronLayers[i]->block(0, 0, 1, topology[i]).unaryExpr([this](Scalar x)
+                                                                       { return activationFunction(x); });
         }
     }
 
-    std::vector<Scalar> getOutput() const {
-        // The output layer is the last neuron layer.
-        const RowVector* outputLayer = neuronLayers.back();
+    // Returns final layer as values mapped from [0,1] to [-1,1].
+    std::vector<Scalar> getOutput() const
+    {
+        const RowVector *outputLayer = neuronLayers.back();
         std::vector<Scalar> output(topology.back());
-        for (uint i = 0; i < topology.back(); i++) {
-            // Multiply by 2 and subtract 1 to transform range from [0,1] to [-1,1]
-            output[i] = 2 * (*outputLayer)(i) - 1;
+        for (size_t i = 0; i < topology.back(); i++)
+        {
+            output[i] = 2 * (*outputLayer)(i)-1;
         }
         return output;
     }
-    
 
-    // Mutate weights based on a mutation probability.
-    void updateWeights() {
-        // Iterate over each weight matrix.
-        for (uint i = 0; i < weights.size(); i++) {
-            for (uint r = 0; r < weights[i]->rows(); r++) {
-                for (uint c = 0; c < weights[i]->cols(); c++) {
+    // Mutate weights
+    void updateWeights()
+    {
+        for (size_t i = 0; i < weights.size(); i++)
+        {
+            for (size_t r = 0; r < weights[i]->rows(); r++)
+            {
+                for (size_t c = 0; c < weights[i]->cols(); c++)
+                {
                     Scalar randVal = static_cast<Scalar>(rand()) / RAND_MAX;
-                    if (randVal < mutationRate) {  // use the member mutationRate
+                    if (randVal < mutationRate)
+                    {
                         Scalar mutation = evolutionRate * (2.0f * static_cast<Scalar>(rand()) / RAND_MAX - 1.0f);
                         weights[i]->coeffRef(r, c) += mutation;
                     }
@@ -439,24 +537,57 @@ public:
         }
     }
 
-    // Activation function: sigmoid in this case.
-    Scalar activationFunction(Scalar x) {
+    Scalar activationFunction(Scalar x)
+    {
         return 1.0f / (1.0f + std::exp(-x));
     }
 
-    // Members
-    std::vector<Matrix*> weights;
-    std::vector<RowVector*> neuronLayers;
+    // Clone method
+    neural clone() const
+    {
+        return neural(*this);
+    }
+
+    std::vector<Matrix *> weights;
+    std::vector<RowVector *> neuronLayers;
     std::vector<uint> topology;
     Scalar evolutionRate;
     Scalar mutationRate;
-};
 
+private:
+    void allocateLayersAndWeights()
+    {
+        for (size_t i = 0; i < topology.size(); i++)
+        {
+            if (i == topology.size() - 1)
+                neuronLayers.push_back(new RowVector(topology[i]));
+            else
+                neuronLayers.push_back(new RowVector(topology[i] + 1));
+
+            if (i != topology.size() - 1)
+                neuronLayers.back()->coeffRef(topology[i]) = 1.0f;
+
+            if (i > 0)
+            {
+                if (i != topology.size() - 1)
+                {
+                    weights.push_back(new Matrix(topology[i - 1] + 1, topology[i] + 1));
+                    *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i] + 1);
+                }
+                else
+                {
+                    weights.push_back(new Matrix(topology[i - 1] + 1, topology[i]));
+                    *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i]);
+                }
+            }
+        }
+    }
+};
 
 ////////////////////////////////////////////////////////////
 // Collision logic
 ////////////////////////////////////////////////////////////
-void checkSwordSwordCollision(Bot &A, Bot &B)
+void checkSwordSwordCollision(Bot &A, Bot &B, bool switch_bot)
 {
     if (!A.isAlive() || !B.isAlive())
         return;
@@ -471,16 +602,26 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float angleA = A.getSwordBodyAngle();
         float angleB = B.getSwordBodyAngle();
 
-        float forceA = std::fabs(std::sin(angleA));
-        float forceB = std::fabs(std::sin(angleB));
+        float forceSinA = std::fabs(std::cos(angleA));
+        float forceSinB = std::fabs(std::cos(angleB));
 
-        float knockbackScale = 20.f;
-        sf::Vector2f dirAB = B.getFootPos() - A.getFootPos();
-        sf::Vector2f normAB = normalize(dirAB);
-        sf::Vector2f normBA = -normAB;
+        int collisions = A.getCollisionAmount();
+        float knockbackScale = collisions * 6.f;
+        float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y);
+        float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
+        float aAom = A.getAngleMomentum();
+        float bAom = B.getAngleMomentum();
 
-        B.applyKnockback(normAB * (forceA * knockbackScale));
-        A.applyKnockback(normBA * (forceB * knockbackScale));
+        if (!switch_bot)
+        {
+            forceSinB = 1;
+        }
+        float forceB = forceSinB * std::max(5.f, std::min(80.f, (knockbackScale * std::abs(bAom) * std::abs(bMom))));
+        float forceA = -forceSinB * std::max(5.f, std::min(80.f, (knockbackScale * std::abs(aAom) * std::abs(aMom))));
+        B.applyKnockback(forceA);
+        A.applyKnockback(forceB);
+        if (forceA != 0 || forceB != 0)
+            A.incrementCollisionAmount();
     }
 }
 
@@ -501,125 +642,140 @@ void checkSwordHitsBody(Bot &attacker, Bot &victim)
     }
 }
 
-void handleCollisions(Bot &A, Bot &B)
+void handleCollisions(Bot &A, Bot &B, bool switch_bot)
 {
-    checkSwordSwordCollision(A, B);
+    checkSwordSwordCollision(A, B, switch_bot);
     checkSwordHitsBody(A, B);
     checkSwordHitsBody(B, A);
 }
 
-
 template <size_t N>
-Eigen::RowVectorXf arrayToEigen(const std::array<float, N>& arr) {
+Eigen::RowVectorXf arrayToEigen(const std::array<float, N> &arr)
+{
     Eigen::RowVectorXf vec(N);
-    for (size_t i = 0; i < N; ++i) {
+    for (size_t i = 0; i < N; ++i)
+    {
         vec(i) = arr[i];
     }
     return vec;
 }
 
-Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB){
-    // For net1: combine botA's ally values with botB's enemy values.
-    auto botAAlly = botA.getAllyValues();   // std::array<float, 5>
-    auto botBEnemy = botB.getEnemyValues();   // std::array<float, 6>
+// Construct the 15-dimensional input for the net controlling botA, given botB as enemy
+Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB)
+{
+    auto botAAlly = botA.getAllyValues();   // std::array<float, 8>
+    auto botBEnemy = botB.getEnemyValues(); // std::array<float, 7>
 
-    // Convert each array to an Eigen row vector.
     Eigen::RowVectorXf vecA = arrayToEigen(botAAlly);
     Eigen::RowVectorXf vecB = arrayToEigen(botBEnemy);
 
-    Eigen::RowVectorXf inputForNet(11);
-    inputForNet << vecA, vecB;  // Concatenates the two vectors
+    Eigen::RowVectorXf inputForNet(15);
+    inputForNet << vecA, vecB;
     return inputForNet;
 }
 
 ////////////////////////////////////////////////////////////
-// Main
+// Parameterized learn function for a single match
 ////////////////////////////////////////////////////////////
-int main()
+neural learn(bool switch_bot, neural net1, neural net2, int round_count,
+             float swordA, float swordB, float speedA, float speedB,
+             float bodyA, float bodyB)
 {
-    int afterRounds=0;
-    int rounds=0;
-    int lastLoss=0; 
-    sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
-    window.setFramerateLimit(100);
+    int afterRounds = round_count;
+    int endRounds = round_count + 50;
+    int timer = 500;
+    int rounds = 0;
+    int lastLoss = 0;
+    int consecutiveRounds = 0;
 
-    std::vector<uint> topology = {11, 100, 100, 4};
-    Scalar evolutionRate = 1;
-    Scalar mutationRate = 0.5;
-    neural net1(topology, evolutionRate, mutationRate);
-    neural net2(topology, evolutionRate, mutationRate);
+    // Create a window only if we want to visualize the fights.
+    // You can control how many rounds you want to observe in real-time.
+    sf::RenderWindow window(sf::VideoMode(800, 600), "Tournament Match");
+    window.setFramerateLimit(300);
 
-    // Create two bots
-    Bot botA(150.f, 400.f, false);
-    Bot botB(650.f, 400.f, true);
+    // Create two bots with the given attributes
+    Bot botA(150.f, 400.f, swordA, speedA, bodyA, false);
+    Bot botB(650.f, 400.f, swordB, speedB, bodyB, true);
 
-    // Example "walls"
     float leftWallX = 100.f;
     float rightWallX = 700.f;
 
-    while (window.isOpen())
+    while (window.isOpen() && rounds < endRounds)
     {
-        // Poll events
-        sf::Event event;
-        while (window.pollEvent(event))
+        if (timer < 0)
         {
-            if (event.type == sf::Event::Closed)
-                window.close();
+            timer = 1000;
+            // Reset bots
+            botA = Bot(150.f, 400.f, swordA, speedA, bodyA, false);
+            botB = Bot(650.f, 400.f, swordB, speedB, bodyB, true);
+            net1.updateWeights();
+            net2.updateWeights();
+            std::cout << "TIMER RUNG! Round: " << rounds << std::endl;
         }
+        timer--;
 
-        // Randomly set the 5 controls for each bot
-        // In your real code, you'd get these from a neural net forward pass:
-
-        // Update each bot with its 5 new control values
-        if (botA.isAlive()){
-            Eigen::RowVectorXf inputForNet1(11);
-            inputForNet1 = getInputForBot(botA, botB);
+        // Bot A
+        if (botA.isAlive() && timer > 0)
+        {
+            Eigen::RowVectorXf inputForNet1 = getInputForBot(botA, botB);
             net1.propagateForward(inputForNet1);
             std::vector<Scalar> output = net1.getOutput();
-            // Convert the output to a std::array<float, 5>
-            std::array<float, 4> controlsA;
-            std::copy_n(output.begin(), 4, controlsA.begin());
+            std::array<float, 5> controlsA;
+            std::copy_n(output.begin(), 5, controlsA.begin());
             botA.updateFromNN(controlsA);
         }
-        else{
-            botA = Bot(150.f, 400.f, false);
-            botB = Bot(650.f, 400.f, true);
-            rounds+=1;
-            std::cout << "Bot B wins, round: " << rounds << std::endl;
-            if(lastLoss!=1){
-                net1=net2;
+        else
+        {
+            timer = 1000;
+            botA = Bot(150.f, 400.f, swordA, speedA, bodyA, false);
+            botB = Bot(650.f, 400.f, swordB, speedB, bodyB, true);
+            rounds++;
+            std::cout << "B WINS! Round: " << rounds << std::endl;
+            consecutiveRounds++;
+            if (lastLoss != 1 || consecutiveRounds > 25)
+            {
+                if (switch_bot)
+                    net1 = net2.clone();
+                lastLoss = 1;
+                consecutiveRounds = 0;
             }
             net1.updateWeights();
-            net1.updateWeights();
-            net1.updateWeights();
             continue;
         }
-        if (botB.isAlive()){
-            Eigen::RowVectorXf inputForNet2(11);
-            inputForNet2 = getInputForBot(botB, botA);
+
+        // Bot B
+        if (botB.isAlive())
+        {
+            Eigen::RowVectorXf inputForNet2 = getInputForBot(botB, botA);
             net2.propagateForward(inputForNet2);
             std::vector<Scalar> output = net2.getOutput();
-            // Convert the output to a std::array<float, 5>
-            std::array<float, 4> controlsB;
-            std::copy_n(output.begin(), 4, controlsB.begin());
+            std::array<float, 5> controlsB;
+            std::copy_n(output.begin(), 5, controlsB.begin());
             botB.updateFromNN(controlsB);
         }
-        else{
-            botA = Bot(150.f, 400.f, false);
-            botB = Bot(650.f, 400.f, true);
-            rounds+=1;
-            std::cout << "Bot A wins, round: " << rounds << std::endl;
-            net2=net1;
-            net2.updateWeights();
-            net2.updateWeights();
+        else
+        {
+            timer = 1000;
+            botA = Bot(150.f, 400.f, swordA, speedA, bodyA, false);
+            botB = Bot(650.f, 400.f, swordB, speedB, bodyB, true);
+            rounds++;
+            std::cout << "A WINS! Round: " << rounds << std::endl;
+            consecutiveRounds++;
+            if (lastLoss != 2 || consecutiveRounds > 25)
+            {
+                if (switch_bot)
+                    net2 = net1.clone();
+                lastLoss = 2;
+                consecutiveRounds = 0;
+            }
             net2.updateWeights();
             continue;
         }
 
-        // Check collisions
-        handleCollisions(botA, botB);
+        // Collisions
+        handleCollisions(botA, botB, switch_bot);
 
-        // Kill if they cross walls
+        // Kill if cross walls
         if (botA.isAlive())
         {
             float xA = botA.getFootPos().x;
@@ -638,7 +794,7 @@ int main()
         botA.draw(window);
         botB.draw(window);
 
-        // Optional: draw the walls
+        // Walls
         sf::VertexArray lw(sf::Lines, 2);
         lw[0].position = sf::Vector2f(leftWallX, 0.f);
         lw[0].color = sf::Color::Magenta;
@@ -653,8 +809,116 @@ int main()
         rw[1].color = sf::Color::Magenta;
         window.draw(rw);
 
-        if(rounds>=afterRounds){window.display();}
+        // Only show after we cross a certain round to reduce overhead
+        if (rounds >= afterRounds)
+        {
+            window.display();
+            // Poll events
+            sf::Event event;
+            while (window.pollEvent(event))
+            {
+                if (event.type == sf::Event::Closed)
+                    window.close();
+            }
+        }
     }
+
+    // By design of this logic, net1 always ends up as the "champion" if switch_bot is true.
+    // Otherwise, it is the net that last overcame the other. The function returns net1.
+    return net1;
+}
+
+////////////////////////////////////////////////////////////
+// Main: 16-bot tournament
+////////////////////////////////////////////////////////////
+int main()
+{
+    // Common network topology (same as before)
+    std::vector<uint> topology = {15, 100, 100, 5};
+    Scalar evolutionRate = 0.1f;
+    Scalar mutationRate = 0.5f;
+
+    // Create 8 neural networks
+    std::vector<neural> nets;
+    nets.reserve(8);
+    for (int i = 0; i < 8; i++)
+    {
+        nets.push_back(neural(topology, evolutionRate, mutationRate));
+    }
+
+    srand(static_cast<unsigned int>(time(0)));
+
+    // Define 8 different sets of attributes:
+    // Balanced so that a longer sword => slower speed, etc.
+    // (swordLen[i], speeds[i], bodyLen[i]) for each bot i
+    std::vector<float> swordLen = {100.f, 110.f, 120.f, 130.f,
+                                   140.f, 150.f, 160.f, 170.f};
+
+    std::vector<float> speeds = {0.08f, 0.07f, 0.06f, 0.05f,
+                                 0.04f, 0.035f, 0.03f, 0.02f};
+
+    std::vector<float> bodyLen = {90.f, 100.f, 105.f, 110.f,
+                                  120.f, 130.f, 140.f, 150.f};
+
+    // -------------------------------------------------------------
+    // Single-elimination bracket (Round of 8 -> Round of 4 -> Final)
+    // -------------------------------------------------------------
+
+    // --- Round of 8: 4 matches ---
+    // Matches: (0 vs 1), (2 vs 3), (4 vs 5), (6 vs 7)
+    // Winners stored back in indices 0,2,4,6
+    for (int i = 0; i < 4; i++)
+    {
+        int idxA = 2 * i;
+        int idxB = 2 * i + 1;
+
+        bool switchBot = true;
+        // Let each pair train/fight for 300 rounds (a bit shorter for speed):
+        nets[idxA] = learn(switchBot,
+                           nets[idxA], nets[idxB], 300,
+                           swordLen[idxA], swordLen[idxB],
+                           speeds[idxA], speeds[idxB],
+                           bodyLen[idxA], bodyLen[idxB]);
+
+        // Attributes (we assume the champion remains in idxA)
+        swordLen[idxA] = swordLen[idxA];
+        speeds[idxA] = speeds[idxA];
+        bodyLen[idxA] = bodyLen[idxA];
+    }
+
+    // --- Round of 4: 2 matches ---
+    // Winners from above are at indices [0,2,4,6].
+    {
+        bool switchBot = true;
+
+        // Match (0 vs 2)
+        nets[0] = learn(switchBot,
+                        nets[0], nets[2], 300,
+                        swordLen[0], swordLen[2],
+                        speeds[0], speeds[2],
+                        bodyLen[0], bodyLen[2]);
+
+        // Match (4 vs 6)
+        nets[4] = learn(switchBot,
+                        nets[4], nets[6], 300,
+                        swordLen[4], swordLen[6],
+                        speeds[4], speeds[6],
+                        bodyLen[4], bodyLen[6]);
+    }
+
+    // --- Final: (0 vs 4) ---
+    {
+        bool switchBot = true;
+        nets[0] = learn(switchBot,
+                        nets[0], nets[4], 300,
+                        swordLen[0], swordLen[4],
+                        speeds[0], speeds[4],
+                        bodyLen[0], bodyLen[4]);
+    }
+
+    std::cout << "\n=============================================\n";
+    std::cout << "  TOURNAMENT WINNER IS AT INDEX 0!\n";
+    std::cout << "=============================================\n\n";
 
     return 0;
 }
