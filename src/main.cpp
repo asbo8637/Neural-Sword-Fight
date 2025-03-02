@@ -63,7 +63,7 @@ class Bot
 {
 public:
     // Constructor
-    Bot(float footX, float footY, bool flipped = false)
+    Bot(float footX, float footY, float sword, bool flipped = false)
         : m_footPos(footX, footY),
           m_speed(0.2f),
           m_bodyLength(120.f),
@@ -74,7 +74,7 @@ public:
           m_wristAngle(0.f),
           m_armLength(50.f),
           m_forearmLength(60.f),
-          m_handLength(80.f),
+          m_handLength(sword),
           m_isAlive(true),
           m_flipped(flipped),
           m_collision_amount(0),
@@ -129,23 +129,23 @@ public:
         
         // For arm angle:
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
-        m_armAngle = std::max(0.4f * Pi, std::min(0.6f * Pi, m_armAngle + controls[1] * m_speed));
+        m_armAngle = std::max(0.2f * Pi, std::min(0.6f * Pi, m_armAngle + controls[1] * m_speed));
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
 
         // For elbow angle:
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
-        m_elbowAngle = std::max(0.f * Pi, std::min(0.2f * Pi, m_elbowAngle + controls[2] * m_speed));
+        m_elbowAngle = std::max(0.f * Pi, std::min(0.4f * Pi, m_elbowAngle + controls[2] * m_speed));
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
         // For wrist angle:
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
-        m_wristAngle = std::max(-0.4f * Pi, std::min(-0.2f * Pi, m_wristAngle + controls[3] * m_speed));
+        m_wristAngle = std::max(-0.4f * Pi, std::min(0.2f * Pi, m_wristAngle + controls[3] * m_speed));
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
 
 
+        m_momentum = sf::Vector2f(m_momentum.x*0.9, m_momentum.y*0.9);
         sf::Vector2f newTip = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
         newTip = sf::Vector2f(newTip.x - m_footPos.x, newTip.y);
         m_momentum += newTip - last_sword_pos;
-        m_momentum = sf::Vector2f(m_momentum.x*0.9, m_momentum.y*0.9);
         //float dx = (m_last_foot_pos.x - m_footPos.x) * direction;
         float m_angle_momentum = std::max(0.f,(m_armAngle-last_arm_angle) + 
         (m_elbowAngle-last_elbow_angle) + 
@@ -566,15 +566,15 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float forceB = std::fabs(std::cos(angleB));
 
         int collisions = A.getCollisionAmount();
-        float knockbackScale = collisions*0.0004f;
+        float knockbackScale = collisions*0.0015f;
         float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
         float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
         float bAom = B.getAngleMomentum();
         //B.applyKnockback(-std::max(collisions*4.f, (forceA * knockbackScale) * aMom * aMom * aAom));
         //A.applyKnockback(std::max(collisions*4.f, (forceB * knockbackScale) * bMom * bMom * bAom));
-        B.applyKnockback(-std::max(static_cast<float>(collisions), (forceA * knockbackScale) * aMom * aMom));
-        A.applyKnockback(std::max(static_cast<float>(collisions), forceB * knockbackScale) * bMom * bMom);
+        B.applyKnockback(-(forceA * knockbackScale) * aMom * std::sqrt(aAom));
+        A.applyKnockback((forceB * knockbackScale) * bMom * std::sqrt(bAom));
     }
 }
 
@@ -632,22 +632,23 @@ Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB){
 int main()
 {
     srand(static_cast<unsigned int>(time(0)));
-    int afterRounds=1000;
+    int afterRounds=2500;
+    int timer = 10000;
     int rounds=0;
     int lastLoss=0; 
     int consecutiveRounds=0;
-    sf::RenderWindow window(sf::VideoMode(1000, 800), "NN Control Example");
-    window.setFramerateLimit(200);
+    sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
+    window.setFramerateLimit(100);
 
-    std::vector<uint> topology = {11, 200, 200, 5};
+    std::vector<uint> topology = {11, 150, 150, 5};
     Scalar evolutionRate = 0.1;
-    Scalar mutationRate = 0.25;
+    Scalar mutationRate = 0.5;
     neural net1(topology, evolutionRate, mutationRate);
     neural net2(topology, evolutionRate, mutationRate);
 
     // Create two bots
-    Bot botA(150.f, 400.f, false);
-    Bot botB(650.f, 400.f, true);
+    Bot botA(150.f, 400.f, 80.f, false);
+    Bot botB(650.f, 400.f, 80.f, true);
 
     // Example "walls"
     float leftWallX = 100.f;
@@ -655,19 +656,16 @@ int main()
 
     while (window.isOpen())
     {
-        // Poll events
-        sf::Event event;
-        while (window.pollEvent(event))
-        {
-            if (event.type == sf::Event::Closed)
-                window.close();
+        if(timer<0){
+            timer=1000;
+            botA = Bot(150.f, 400.f, 90.f, false);
+            botB = Bot(650.f, 400.f, 92.f, true);
+            net1.updateWeights();
+            net2.updateWeights();
         }
+        timer--;
 
-        // Randomly set the 5 controls for each bot
-        // In your real code, you'd get these from a neural net forward pass:
-
-        // Update each bot with its 5 new control values
-        if (botA.isAlive()){
+        if (botA.isAlive() && timer> 0){
             Eigen::RowVectorXf inputForNet1(11);
             inputForNet1 = getInputForBot(botA, botB);
             net1.propagateForward(inputForNet1);
@@ -678,8 +676,8 @@ int main()
             botA.updateFromNN(controlsA);
         }
         else{
-            botA = Bot(150.f, 400.f, false);
-            botB = Bot(650.f, 400.f, true);
+            botA = Bot(150.f, 400.f, 90.f, false);
+            botB = Bot(650.f, 400.f, 92.f, true);
             rounds+=1;
             std::cout << "Bot B wins, round: " << rounds << std::endl;
             consecutiveRounds+=1;
@@ -702,8 +700,8 @@ int main()
             botB.updateFromNN(controlsB);
         }
         else{
-            botA = Bot(150.f, 400.f, false);
-            botB = Bot(650.f, 400.f, true);
+            botA = Bot(150.f, 400.f, 90.f, false);
+            botB = Bot(650.f, 400.f, 92.f, true);
             rounds+=1;
             std::cout << "Bot A wins, round: " << rounds << std::endl;
             consecutiveRounds+=1;
@@ -753,7 +751,16 @@ int main()
         rw[1].color = sf::Color::Magenta;
         window.draw(rw);
 
-        if(rounds>=afterRounds){window.display();}
+        if(rounds>=afterRounds){
+            window.display();
+                    // Poll events
+            sf::Event event;
+            while (window.pollEvent(event))
+            {
+                if (event.type == sf::Event::Closed)
+                    window.close();
+            }
+        }
     }
 
     return 0;
