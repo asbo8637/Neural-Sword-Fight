@@ -112,15 +112,15 @@ public:
         // 2) Map bodyAngle from [0..1] to e.g. [-π/2..+π/2]
         float halfPi = 3.14159f * 0.25f;
 
-        m_bodyAngle = std::max(-halfPi, std::min(halfPi, 0.5f*m_bodyAngle+controls[0]*isflipped)); // clamp
+        m_bodyAngle = std::max(-halfPi, std::min(halfPi, 0.5f*m_bodyAngle+controls[0])); // clamp
 
-        m_armAngle = std::max(halfPi, std::min(3.f*halfPi, m_armAngle+controls[1] * isflipped));
+        m_armAngle = std::max(3.f*halfPi, std::min(halfPi, m_armAngle+controls[1])) * isflipped;
 
         // 4) elbowAngle => similarly
-        m_elbowAngle += controls[2] * isflipped;
+        m_elbowAngle = std::max(3.f*halfPi, std::min(halfPi, m_elbowAngle+controls[2])) * isflipped;
 
         // 5) wristAngle => similarly
-        m_wristAngle += controls[3] * isflipped;
+        m_wristAngle = std::max(3.f*halfPi, std::min(halfPi, m_wristAngle+controls[3])) * isflipped;
     }
 
     void kill() { m_isAlive = false; }
@@ -169,9 +169,6 @@ public:
         // Normalize footX from [100, 700] to [0, 1].
         float normFootX = (footX - 100.0f) / 600.0f;
     
-        // Determine sign multiplier for angles.
-        float sign = m_flipped ? -1.0f : 1.0f;
-    
         // Helper lambda to normalize an angle.
         auto normalizeAngle = [](float angle) -> float {
             // Ensure angle is in [0, 2pi].
@@ -180,10 +177,10 @@ public:
             return angle / (2.0f * 3.14159f);
         };
     
-        float normBodyAngle  = normalizeAngle(m_bodyAngle  * sign);
-        float normArmAngle   = normalizeAngle(m_armAngle   * sign);
-        float normElbowAngle = normalizeAngle(m_elbowAngle * sign);
-        float normWristAngle = normalizeAngle(m_wristAngle * sign);
+        float normBodyAngle  = normalizeAngle(m_bodyAngle);
+        float normArmAngle   = normalizeAngle(m_armAngle);
+        float normElbowAngle = normalizeAngle(m_elbowAngle);
+        float normWristAngle = normalizeAngle(m_wristAngle);
     
         // Return ally values as [normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle]
         return { normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle };
@@ -510,7 +507,7 @@ Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB){
 ////////////////////////////////////////////////////////////
 int main()
 {
-    int afterRounds=10000;
+    int afterRounds=100;
     int rounds=0;
     sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
     window.setFramerateLimit(60);
