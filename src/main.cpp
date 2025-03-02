@@ -161,17 +161,17 @@ public:
 
         // (2) For arm angle:
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
-        m_armAngle = std::max(0.2f * Pi, std::min(0.6f * Pi, m_armAngle + controls[1] * m_speed));
+        m_armAngle = std::max(0.2f * Pi, std::min(0.6f * Pi, m_armAngle + 1.2f*controls[1] * m_speed));
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
 
         // (3) For elbow angle:
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
-        m_elbowAngle = std::max(0.f * Pi, std::min(0.4f * Pi, m_elbowAngle + controls[2] * m_speed));
+        m_elbowAngle = std::max(0.f * Pi, std::min(0.4f * Pi, m_elbowAngle + 1.2f*controls[2] * m_speed));
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
 
         // (4) For wrist angle:
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
-        m_wristAngle = std::max(-0.4f * Pi, std::min(0.2f * Pi, m_wristAngle + controls[3] * m_speed));
+        m_wristAngle = std::max(-0.4f * Pi, std::min(0.2f * Pi, m_wristAngle + 2.2f*controls[3] * m_speed));
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
 
         sf::Vector2f newTip = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
@@ -666,7 +666,7 @@ void checkSwordSwordCollision(Bot &A, Bot &B, bool switch_bot)
         float forceSinB = std::fabs(std::cos(angleB));
 
         int collisions = A.getCollisionAmount();
-        float knockbackScale = collisions * 6.f;
+        float knockbackScale = collisions * 2.f;
         float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y);
         float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
@@ -676,8 +676,8 @@ void checkSwordSwordCollision(Bot &A, Bot &B, bool switch_bot)
         {
             forceSinB = 1;
         }
-        float forceB = forceSinB * std::max(5.f, std::min(80.f, (knockbackScale * std::abs(bAom) * std::abs(bMom))));
-        float forceA = -forceSinB * std::max(5.f, std::min(80.f, (knockbackScale * std::abs(aAom) * std::abs(aMom))));
+        float forceB = forceSinB * std::max(5.f, std::min(90.f, (knockbackScale * std::abs(bAom) * std::abs(bMom))));
+        float forceA = -forceSinB * std::max(5.f, std::min(90.f, (knockbackScale * std::abs(aAom) * std::abs(aMom))));
         B.applyKnockback(forceA);
         A.applyKnockback(forceB);
         if (forceA != 0 || forceB != 0)
@@ -768,14 +768,18 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count,
             // Reset bots
             botA = Bot(150.f, 400.f, swordA, speedA, bodyA, false);
             botB = Bot(650.f, 400.f, swordB, speedB, bodyB, true);
-            net1.updateWeights();
-            net2.updateWeights();
+            if(lastLoss == 1)
+                net1.updateWeights();
+            else
+                net2.updateWeights();
             std::cout << "TIMER RUNG! Round: " << rounds << std::endl;
+            rounds++;
+            consecutiveRounds++;
         }
         timer--;
 
         // Bot A
-        if (botA.isAlive() && timer > 0)
+        if (botA.isAlive())
         {
             Eigen::RowVectorXf inputForNet1 = getInputForBot(botA, botB);
             net1.propagateForward(inputForNet1);
@@ -903,9 +907,9 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count,
 int main()
 {
     // Common network topology (same as before)
-    std::vector<uint> topology = {15, 100, 100, 5};
+    std::vector<uint> topology = {15, 150, 150, 5};
     Scalar evolutionRate = 0.1f;
-    Scalar mutationRate = 0.5f;
+    Scalar mutationRate = 0.3f;
 
     // Create 8 neural networks.
     std::vector<neural> nets;
@@ -944,7 +948,7 @@ int main()
 
         bool switchBot = true;
         nets[idxA] = learn(switchBot,
-                           nets[idxA], nets[idxB], 500,
+                           nets[idxA], nets[idxB], 2000,
                            swordLen[idxA], swordLen[idxB],
                            speeds[idxA], speeds[idxB],
                            bodyLen[idxA], bodyLen[idxB]);
