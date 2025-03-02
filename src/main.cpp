@@ -77,7 +77,7 @@ public:
           m_handLength(sword),
           m_isAlive(true),
           m_flipped(flipped),
-          m_collision_amount(0),
+          m_collision_amount(1),
           m_momentum(0.f, 0.f),
           m_angle_momentum(0)
     {
@@ -118,7 +118,7 @@ public:
         float direction = m_flipped ? 1.0f : -1.0f;
         
         // 1) Update foot x position.
-        m_footPos.x += 3.0f * direction * std::min(-0.1f, controls[4]);
+        m_footPos.x += 3.0f * direction * std::min(-0.2f, controls[4]);
         
         float Pi = 3.14159f;
         
@@ -141,16 +141,21 @@ public:
         m_wristAngle = std::max(-0.4f * Pi, std::min(0.2f * Pi, m_wristAngle + controls[3] * m_speed));
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
 
-
-        m_momentum = sf::Vector2f(m_momentum.x*0.9, m_momentum.y*0.9);
         sf::Vector2f newTip = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
         newTip = sf::Vector2f(newTip.x - m_footPos.x, newTip.y);
         m_momentum += newTip - last_sword_pos;
         //float dx = (m_last_foot_pos.x - m_footPos.x) * direction;
-        float m_angle_momentum = std::max(1.f,(m_armAngle-last_arm_angle) + 
-        (m_elbowAngle-last_elbow_angle) + 
-        (m_wristAngle-last_wrist_angle) + 
-        (m_bodyAngle-last_body_angle));
+        m_angle_momentum = 100*
+        4*std::abs(m_armAngle-last_arm_angle) + 
+        3*std::abs(m_elbowAngle-last_elbow_angle) + 
+        std::abs(m_wristAngle-last_wrist_angle) + 
+        10*std::abs(m_bodyAngle-last_body_angle);
+    }
+
+    void launch_sword(){  
+        m_elbowAngle *= 0.96f;
+        m_wristAngle *= 0.96f;
+        m_armAngle *= 0.99f;
     }
 
     void kill() { m_isAlive = false; }
@@ -564,23 +569,24 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float angleA = A.getSwordBodyAngle();
         float angleB = B.getSwordBodyAngle();
 
-        float forceA = std::fabs(std::cos(angleA));
-        float forceB = std::fabs(std::cos(angleB));
+        float forceSinA = std::fabs(std::cos(angleA));
+        float forceSinB = std::fabs(std::cos(angleB));
 
         int collisions = A.getCollisionAmount();
-        float knockbackScale = collisions*0.5f;
+        float knockbackScale = collisions*1.f;
         float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
         float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
         float bAom = B.getAngleMomentum();
-        forceB =-(forceA * knockbackScale) * aMom * A.getAngleMomentum();
-        forceA = (forceB * knockbackScale) * bMom * B.getAngleMomentum();
+        // float forceB = -( knockbackScale) * (std::abs(aMom) + std::abs(aAom));
+        // float forceA = ( knockbackScale) * (0.05*std::abs(bMom) + std::abs(bAom));
+        float forceB = -forceSinB*( knockbackScale) * std::abs(aAom)*std::abs(aAom);
+        float forceA = forceSinA*( knockbackScale) * std::abs(bAom)*std::abs(bAom);
         B.applyKnockback(forceB);
         A.applyKnockback(forceA);
-        if(forceA!=0 || forceB!=0){
-            A.incrementCollisionAmount();
-        }
-        
+        if(forceA != 0 || forceB !=0) A.incrementCollisionAmount();
+        // A.launch_sword();
+        // B.launch_sword();
     }
 }
 
@@ -679,7 +685,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
         else{
             timer=1000;
             botA = Bot(150.f, 400.f, 90.f, false);
-            botB = Bot(650.f, 400.f, 93.f, true);
+            botB = Bot(650.f, 400.f, 90.f, true);
             rounds+=1;
             std::cout << "B WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
@@ -703,7 +709,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
         }
         else{
             timer=1000;
-            botA = Bot(150.f, 400.f, 93.f, false);
+            botA = Bot(150.f, 400.f, 100.f, false);
             botB = Bot(650.f, 400.f, 90.f, true);
             rounds+=1;
             std::cout << "A WINS! Round: " << rounds << std::endl;
@@ -772,17 +778,17 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
 
 int main()
 {
-    std::vector<uint> topology = {11, 150, 150, 5};
-    Scalar evolutionRate = 0.1;
-    Scalar mutationRate = 0.4;
+    std::vector<uint> topology = {11, 100, 100, 5};
+    Scalar evolutionRate = 0.2;
+    Scalar mutationRate = 0.5;
     neural net1(topology, evolutionRate, mutationRate);
     neural net2(topology, evolutionRate, mutationRate);
     neural net3(topology, evolutionRate, mutationRate);
     neural net4(topology, evolutionRate, mutationRate);
 
     srand(static_cast<unsigned int>(time(0)));
-    neural champ1 = learn(true, net1, net2, 500);
-    neural champ2 = learn(true, net3, net4, 500);
-    neural champ3 = learn(false, champ1, champ2, 500);
+    neural champ1 = learn(true, net1, net2, 1000);
+    neural champ2 = learn(true, net3, net4, 2000);
+    neural champ3 = learn(false, champ1, champ2, 250);
     return 0;
 }
