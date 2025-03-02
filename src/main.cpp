@@ -3,6 +3,15 @@
 #include <cmath>
 #include <algorithm>
 #include <iostream>
+#include <Eigen/dense>
+#include <iostream>
+#include <vector>
+
+typedef float Scalar;
+typedef Eigen::MatrixXf Matrix;
+typedef Eigen::RowVectorXf RowVector;
+typedef Eigen::VectorXf ColVector;
+typedef unsigned int uint;
 
 ////////////////////////////////////////////////////////////
 // Utility random number generator
@@ -305,102 +314,82 @@ private:
     sf::CircleShape m_head;
 };
 
-class neural
-{
-    public:
-    neural(std::vector<uint> topology, Scalar evolutionRate = Scalar(0.005),  Scalar mutationRate = Scalar(0.1));
-    // function for forward propagation of data
-    void propagateForward(RowVector& input);
-
-    void updateWeights();
-
-    std::vector<Matrix*> weights;
-    std::vector<RowVector*> neuronLayers;
-    std::vector<uint> topology;
-    Scalar evolutionRate;
-    Scalar mutationRate;
-
-    Scalar activationFunction(Scalar x)
-    {
-        return 1.0f / (1.0f + std::exp(-x));
-    }
-
-    neural::neural(std::vector<uint> topology, Scalar evolutionRate, Scalar mutationRate)
-    {
+class neural {
+public:
+    // Constructor with default parameters
+    neural(std::vector<uint> topology, Scalar evolutionRate = 0.005f, Scalar mutationRate = 0.1f) {
         this->topology = topology;
         this->mutationRate = mutationRate;
         this->evolutionRate = evolutionRate;
         for (uint i = 0; i < topology.size(); i++) {
-            // Initialize neuron layers. For non-output layers, add one extra neuron for bias.
+            // For non-output layers, add one extra neuron for bias.
             if (i == topology.size() - 1)
                 neuronLayers.push_back(new RowVector(topology[i]));
             else
                 neuronLayers.push_back(new RowVector(topology[i] + 1));
-    
-            // Set the bias neuron to 1.0 for all non-output layers.
-            if (i != topology.size() - 1) {
-                neuronLayers.back()->coeffRef(topology[i]) = 1.0;
-            }
-    
+
+            // Set the bias neuron to 1.0 for non-output layers.
+            if (i != topology.size() - 1)
+                neuronLayers.back()->coeffRef(topology[i]) = 1.0f;
+
             // Initialize weights matrix (starting from the second layer)
             if (i > 0) {
                 if (i != topology.size() - 1) {
-                    // For hidden layers, dimensions include bias for both previous and current layer.
+                    // Hidden layers: include bias for both previous and current layer.
                     weights.push_back(new Matrix(topology[i - 1] + 1, topology[i] + 1));
                     *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i] + 1);
-                }
-                else {
-                    // For the output layer, previous layer includes bias, but output layer does not.
+                } else {
+                    // Output layer: previous layer includes bias; output layer does not.
                     weights.push_back(new Matrix(topology[i - 1] + 1, topology[i]));
                     *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i]);
                 }
             }
         }
-    };
-    
+    }
 
-    void neural::propagateForward(RowVector& input)
-    {
-        // set the input to input layer
-        // block returns a part of the given vector or matrix
-        // block takes 4 arguments : startRow, startCol, blockRows, blockCols
+    // Forward propagation: calculates activations through the network.
+    void propagateForward(RowVector& input) {
+        // Set the input layer (excluding the bias element)
         neuronLayers.front()->block(0, 0, 1, neuronLayers.front()->size() - 1) = input;
     
-        // propagate the data forward and then 
-        // apply the activation function to your network
-        // unaryExpr applies the given function to all elements of CURRENT_LAYER
+        // Forward propagation: multiply by weights and apply activation function.
         for (uint i = 1; i < topology.size(); i++) {
-            // already explained above
             (*neuronLayers[i]) = (*neuronLayers[i - 1]) * (*weights[i - 1]);
-            neuronLayers[i]->block(0, 0, 1, topology[i]).unaryExpr([this](Scalar x) { return activationFunction(x); });
+            neuronLayers[i]->block(0, 0, 1, topology[i])
+                = neuronLayers[i]->block(0, 0, 1, topology[i])
+                    .unaryExpr([this](Scalar x) { return activationFunction(x); });
         }
     }
 
-    
-    void neural::updateWeights()
-    {
-        // Define a mutation probability (chance to mutate each weight)
-        // For example, a mutationRate of 0.1 means there's a 10% chance to mutate each weight.
-        Scalar mutationProbability = 0.1;
-    
-        // Iterate over each weight matrix
+    // Mutate weights based on a mutation probability.
+    void updateWeights() {
+        // Iterate over each weight matrix.
         for (uint i = 0; i < weights.size(); i++) {
             for (uint r = 0; r < weights[i]->rows(); r++) {
                 for (uint c = 0; c < weights[i]->cols(); c++) {
-                    // Generate a random value between 0 and 1
                     Scalar randVal = static_cast<Scalar>(rand()) / RAND_MAX;
-                    // Check if this weight should be mutated
-                    if (randVal < mutationProbability) {
-                        // Generate a mutation value in the range [-1, 1]
+                    if (randVal < mutationRate) {  // use the member mutationRate
                         Scalar mutation = evolutionRate * (2.0f * static_cast<Scalar>(rand()) / RAND_MAX - 1.0f);
-                        // Update the weight
                         weights[i]->coeffRef(r, c) += mutation;
                     }
                 }
             }
         }
-    }    
+    }
+
+    // Activation function: sigmoid in this case.
+    Scalar activationFunction(Scalar x) {
+        return 1.0f / (1.0f + std::exp(-x));
+    }
+
+    // Members
+    std::vector<Matrix*> weights;
+    std::vector<RowVector*> neuronLayers;
+    std::vector<uint> topology;
+    Scalar evolutionRate;
+    Scalar mutationRate;
 };
+
 
 ////////////////////////////////////////////////////////////
 // Collision/knockback logic
