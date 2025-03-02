@@ -577,8 +577,8 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
 
         int collisions = A.getCollisionAmount();
         float knockbackScale = collisions*0.4f;
-        float aMom = forceSinA*std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
-        float bMom = forceSinB*std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
+        float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
+        float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
         float bAom = B.getAngleMomentum();
         // float forceB = -( knockbackScale) * (std::abs(aMom) + std::abs(aAom));
