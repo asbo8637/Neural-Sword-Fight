@@ -155,7 +155,7 @@ public:
         float direction = m_flipped ? 1.0f : -1.0f;
 
         // (1) Move footX
-        m_footPos.x -= 1.5f * direction;
+        m_footPos.x -= 1.3f * direction;
 
         float Pi = 3.14159f;
 
@@ -178,7 +178,7 @@ public:
         newTip = sf::Vector2f(newTip.x - m_footPos.x, newTip.y);
         m_momentum += newTip - last_sword_pos;
         m_angle_momentum = 100 *
-                               4 * std::abs(m_armAngle - last_arm_angle) +
+                            4 * std::abs(m_armAngle - last_arm_angle) +
                            3 * std::abs(m_elbowAngle - last_elbow_angle) +
                            std::abs(m_wristAngle - last_wrist_angle) +
                            10 * std::abs(m_bodyAngle - last_body_angle);
@@ -186,9 +186,8 @@ public:
 
     void launch_sword()
     {
-        m_elbowAngle *= 0.96f;
-        m_wristAngle *= 0.96f;
-        m_armAngle *= 0.99f;
+        m_elbowAngle *= 0.98f;
+        m_wristAngle *= 0.98f;
     }
 
     void kill() { m_isAlive = false; }
@@ -652,6 +651,10 @@ void checkSwordSwordCollision(Bot &A, Bot &B, bool switch_bot)
     if (!A.isAlive() || !B.isAlive())
         return;
 
+    if (std::abs(A.getSwordBodyAngle()) == std::abs(B.getSwordBodyAngle())){
+        A.launch_sword();
+    }
+
     sf::Vector2f aSwordStart, aSwordEnd;
     A.getSwordLine(aSwordStart, aSwordEnd);
     sf::Vector2f bSwordStart, bSwordEnd;
@@ -676,8 +679,8 @@ void checkSwordSwordCollision(Bot &A, Bot &B, bool switch_bot)
         {
             forceSinB = 1;
         }
-        float forceB = forceSinB * std::max(5.f, std::min(90.f, (knockbackScale * std::abs(bAom) * std::abs(bMom))));
-        float forceA = -forceSinB * std::max(5.f, std::min(90.f, (knockbackScale * std::abs(aAom) * std::abs(aMom))));
+        float forceB = std::max(5.f, forceSinB * std::min(90.f, (knockbackScale * std::abs(bAom) * std::abs(bMom))));
+        float forceA = -std::max(5.f, forceSinB * std::min(90.f, (knockbackScale * std::abs(aAom) * std::abs(aMom))));
         B.applyKnockback(forceA);
         A.applyKnockback(forceB);
         if (forceA != 0 || forceB != 0)
@@ -743,7 +746,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count,
 {
     int afterRounds = round_count;
     int endRounds = round_count + 50;
-    int timer = 500;
+    int timer = 400;
     int rounds = 0;
     int lastLoss = 0;
     int consecutiveRounds = 0;
@@ -764,14 +767,24 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count,
     {
         if (timer < 0)
         {
-            timer = 1000;
+            timer = 400;
             // Reset bots
             botA = Bot(150.f, 400.f, swordA, speedA, bodyA, false);
             botB = Bot(650.f, 400.f, swordB, speedB, bodyB, true);
             if(lastLoss == 1)
                 net1.updateWeights();
+                if (consecutiveRounds > 15)
+                {
+                    net1 = net2.clone();
+                    consecutiveRounds=0;
+                }
             else
                 net2.updateWeights();
+                if (consecutiveRounds > 15)
+                {
+                    net2 = net1.clone();
+                    consecutiveRounds=0;
+                }
             std::cout << "TIMER RUNG! Round: " << rounds << std::endl;
             rounds++;
             consecutiveRounds++;
@@ -790,13 +803,13 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count,
         }
         else
         {
-            timer = 1000;
+            timer = 400;
             botA = Bot(150.f, 400.f, swordA, speedA, bodyA, false);
             botB = Bot(650.f, 400.f, swordB, speedB, bodyB, true);
             rounds++;
             std::cout << "B WINS! Round: " << rounds << std::endl;
             consecutiveRounds++;
-            if (lastLoss != 1 || consecutiveRounds > 25)
+            if (lastLoss != 1 || consecutiveRounds > 15)
             {
                 if (switch_bot)
                     net1 = net2.clone();
@@ -819,13 +832,13 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count,
         }
         else
         {
-            timer = 1000;
+            timer = 400;
             botA = Bot(150.f, 400.f, swordA, speedA, bodyA, false);
             botB = Bot(650.f, 400.f, swordB, speedB, bodyB, true);
             rounds++;
             std::cout << "A WINS! Round: " << rounds << std::endl;
             consecutiveRounds++;
-            if (lastLoss != 2 || consecutiveRounds > 25)
+            if (lastLoss != 2 || consecutiveRounds > 15)
             {
                 if (switch_bot)
                     net2 = net1.clone();
@@ -898,7 +911,10 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count,
 
     // By design of this logic, net1 always ends up as the "champion" if switch_bot is true.
     // Otherwise, it is the net that last overcame the other. The function returns net1.
-    return net1;
+    if(lastLoss == 1)
+        return net2;
+    else
+        return net1;
 }
 
 ////////////////////////////////////////////////////////////
@@ -906,10 +922,9 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count,
 ////////////////////////////////////////////////////////////
 int main()
 {
-    // Common network topology (same as before)
-    std::vector<uint> topology = {15, 150, 150, 5};
+    std::vector<uint> topology = {15, 100, 100, 5};
     Scalar evolutionRate = 0.1f;
-    Scalar mutationRate = 0.3f;
+    Scalar mutationRate = 0.5f;
 
     // Create 8 neural networks.
     std::vector<neural> nets;
@@ -922,78 +937,96 @@ int main()
     srand(static_cast<unsigned int>(time(0)));
 
     // Define 8 different sets of attributes.
-    std::vector<float> swordLen = {100.f, 110.f, 120.f, 130.f,
-                                   140.f, 150.f, 160.f, 170.f};
+    std::vector<float> swordLen = {80.f, 80.f, 80.f, 80.f,
+                                   65.f, 65.f, 100.f, 100.f};
 
-    std::vector<float> speeds = {0.08f, 0.07f, 0.06f, 0.05f,
-                                 0.04f, 0.035f, 0.03f, 0.02f};
+    std::vector<float> speeds = {0.06f, 0.06f, 0.06f, 0.06f,
+                                 0.035f, 0.035f, 0.02f, 0.02f};
 
-    std::vector<float> bodyLen = {90.f, 100.f, 105.f, 110.f,
-                                  120.f, 130.f, 140.f, 150.f};
+    std::vector<float> bodyLen = {100.f, 100.f, 105.f, 105.f,
+                                  130.f, 130.f, 150.f, 150.f};
+                                
+    neural net1=learn(true ,
+            nets[0], nets[0], 1000,
+            swordLen[0], swordLen[1],
+            speeds[0], speeds[1],
+            bodyLen[0], bodyLen[1]);
 
-    // -------------------------------------------------------------
-    // Single-elimination bracket (Round of 8 -> Round of 4 -> Final)
-    // -------------------------------------------------------------
+    neural net2=learn(true ,
+        nets[3], nets[4], 1000,
+        swordLen[0], swordLen[1],
+        speeds[0], speeds[1],
+        bodyLen[0], bodyLen[1]);
 
-    // --- Round of 8: 4 matches ---
-    std::cout << "\n==== ROUND OF 8 ====\n";
-    // Matches: (0 vs 1), (2 vs 3), (4 vs 5), (6 vs 7)
-    // Winners stored back in indices 0,2,4,6
-    for (int i = 0; i < 4; i++)
-    {
-        int idxA = 2 * i;
-        int idxB = 2 * i + 1;
-        std::cout << "Match " << i+1 << " of Round of 8: Bot " << idxA 
-                  << " vs Bot " << idxB << "\n";
+    learn(true ,
+        net1, net2, 50,
+        swordLen[0], swordLen[1],
+        speeds[0], speeds[1],
+        bodyLen[0], bodyLen[1]);
 
-        bool switchBot = true;
-        nets[idxA] = learn(switchBot,
-                           nets[idxA], nets[idxB], 2000,
-                           swordLen[idxA], swordLen[idxB],
-                           speeds[idxA], speeds[idxB],
-                           bodyLen[idxA], bodyLen[idxB]);
+    // // -------------------------------------------------------------
+    // // Single-elimination bracket (Round of 8 -> Round of 4 -> Final)
+    // // -------------------------------------------------------------
 
-        // Assume the winner remains at idxA.
-        // (Attributes remain the same for the champion.)
-    }
+    // // --- Round of 8: 4 matches ---
+    // std::cout << "\n==== ROUND OF 8 ====\n";
+    // // Matches: (0 vs 1), (2 vs 3), (4 vs 5), (6 vs 7)
+    // // Winners stored back in indices 0,2,4,6
+    // for (int i = 0; i < 4; i++)
+    // {
+    //     int idxA = 2 * i;
+    //     int idxB = 2 * i + 1;
+    //     std::cout << "Match " << i+1 << " of Round of 8: Bot " << idxA 
+    //               << " vs Bot " << idxB << "\n";
 
-    // --- Round of 4: 2 matches ---
-    std::cout << "\n==== ROUND OF 4 ====\n";
-    {
-        bool switchBot = false;
+    //     bool switchBot = true;
+    //     nets[idxA] = learn(switchBot,
+    //                        nets[idxA], nets[idxB], 1000,
+    //                        swordLen[idxA], swordLen[idxB],
+    //                        speeds[idxA], speeds[idxB],
+    //                        bodyLen[idxA], bodyLen[idxB]);
 
-        // Match (0 vs 2)
-        std::cout << "Match 1 of Round of 4: Bot 0 vs Bot 2\n";
-        nets[0] = learn(switchBot,
-                        nets[0], nets[2], 100,
-                        swordLen[0], swordLen[2],
-                        speeds[0], speeds[2],
-                        bodyLen[0], bodyLen[2]);
+    //     // Assume the winner remains at idxA.
+    //     // (Attributes remain the same for the champion.)
+    // }
 
-        // Match (4 vs 6)
-        std::cout << "Match 2 of Round of 4: Bot 4 vs Bot 6\n";
-        nets[4] = learn(switchBot,
-                        nets[4], nets[6], 100,
-                        swordLen[4], swordLen[6],
-                        speeds[4], speeds[6],
-                        bodyLen[4], bodyLen[6]);
-    }
+    // // --- Round of 4: 2 matches ---
+    // std::cout << "\n==== ROUND OF 4 ====\n";
+    // {
+    //     bool switchBot = false;
 
-    // --- Final: (0 vs 4) ---
-    std::cout << "\n==== FINAL ROUND ====\n";
-    {
-        bool switchBot = false;
-        std::cout << "Final Match: Bot 0 vs Bot 4\n";
-        nets[0] = learn(switchBot,
-                        nets[0], nets[4], 100,
-                        swordLen[0], swordLen[4],
-                        speeds[0], speeds[4],
-                        bodyLen[0], bodyLen[4]);
-    }
+    //     // Match (0 vs 2)
+    //     std::cout << "Match 1 of Round of 4: Bot 0 vs Bot 2\n";
+    //     nets[0] = learn(switchBot,
+    //                     nets[0], nets[2], 100,
+    //                     swordLen[0], swordLen[2],
+    //                     speeds[0], speeds[2],
+    //                     bodyLen[0], bodyLen[2]);
 
-    std::cout << "\n=============================================\n";
-    std::cout << "  TOURNAMENT WINNER IS AT INDEX 0!\n";
-    std::cout << "=============================================\n\n";
+    //     // Match (4 vs 6)
+    //     std::cout << "Match 2 of Round of 4: Bot 4 vs Bot 6\n";
+    //     nets[4] = learn(switchBot,
+    //                     nets[4], nets[6], 100,
+    //                     swordLen[4], swordLen[6],
+    //                     speeds[4], speeds[6],
+    //                     bodyLen[4], bodyLen[6]);
+    // }
+
+    // // --- Final: (0 vs 4) ---
+    // std::cout << "\n==== FINAL ROUND ====\n";
+    // {
+    //     bool switchBot = false;
+    //     std::cout << "Final Match: Bot 0 vs Bot 4\n";
+    //     nets[0] = learn(switchBot,
+    //                     nets[0], nets[4], 100,
+    //                     swordLen[0], swordLen[4],
+    //                     speeds[0], speeds[4],
+    //                     bodyLen[0], bodyLen[4]);
+    // }
+
+    // std::cout << "\n=============================================\n";
+    // std::cout << "  TOURNAMENT WINNER IS AT INDEX 0!\n";
+    // std::cout << "=============================================\n\n";
 
     return 0;
 }
