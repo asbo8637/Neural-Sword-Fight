@@ -132,7 +132,7 @@ public:
         // 2) Update body angle.
         // First, update and clamp the angle.
         // Let's assume the desired unclipped range for body angle is [0.3*Pi, 0.7*Pi]
-        m_bodyAngle = std::max(0.9f * Pi, std::min(1.1f * Pi, m_bodyAngle + direction*controls[0] * m_speed));
+        //m_bodyAngle = std::max(0.9f * Pi, std::min(1.1f * Pi, m_bodyAngle + direction*controls[0] * m_speed));
         
         // For arm angle:
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
@@ -203,11 +203,9 @@ public:
 
     float getSwordBodyAngle() const
     {
-        sf::Vector2f bodyVec = getHeadPos() - m_footPos;
         sf::Vector2f swordStart, swordEnd;
         getSwordLine(swordStart, swordEnd);
-        sf::Vector2f swordVec = swordEnd - swordStart;
-        return angleBetween(bodyVec, swordVec);
+        return angleBetween(swordEnd, swordStart);
     }
 
     std::array<float, 8> getAllyValues() const {
@@ -585,8 +583,8 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float bAom = B.getAngleMomentum();
         // float forceB = -( knockbackScale) * (std::abs(aMom) + std::abs(aAom));
         // float forceA = ( knockbackScale) * (0.05*std::abs(bMom) + std::abs(bAom));
-        float forceB = -forceSinB*std::max(5.f, std::min(85.f, ( knockbackScale * std::abs(bAom)*std::abs(bMom))));
-        float forceA = forceSinA*std::max(5.f, std::min(85.f, ( knockbackScale * std::abs(aAom)*std::abs(aMom))));
+        float forceB = -std::max(5.f, std::min(85.f, ( knockbackScale * std::abs(bAom)*std::abs(bMom))));
+        float forceA = std::max(5.f, std::min(85.f, ( knockbackScale * std::abs(aAom)*std::abs(aMom))));
         B.applyKnockback(forceB);
         A.applyKnockback(forceA);
         if(forceA != 0 || forceB !=0) A.incrementCollisionAmount();
@@ -714,8 +712,8 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
         }
         else{
             timer=1000;
-            botA = Bot(150.f, 400.f, 90.f, false);
-            botB = Bot(650.f, 400.f, 90.f, true);
+            botA = Bot(150.f, 400.f, 130.f, false);
+            botB = Bot(650.f, 400.f, 130.f, true);
             rounds+=1;
             std::cout << "A WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
