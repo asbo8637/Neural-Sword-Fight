@@ -65,7 +65,7 @@ public:
     // Constructor
     Bot(float footX, float footY, float sword, bool flipped = false)
         : m_footPos(footX, footY),
-          m_speed(0.2f),
+          m_speed(0.05f),
           m_bodyLength(120.f),
           m_shoulderOffset(40.f),
           m_bodyAngle(3.1415f),
@@ -125,7 +125,7 @@ public:
         
         // 1) Update foot x position.
         //m_footPos.x += 3.0f * direction * randomMovement();
-        m_footPos.x -= 2.f * direction;
+        m_footPos.x -= 1.3f * direction;
         
         float Pi = 3.14159f;
         
@@ -576,15 +576,15 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float forceSinB = std::fabs(std::cos(angleB));
 
         int collisions = A.getCollisionAmount();
-        float knockbackScale = collisions*0.4f;
-        float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
-        float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
+        float knockbackScale = collisions*6.f;
+        float aMom = forceSinA*std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
+        float bMom = forceSinA*std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
         float bAom = B.getAngleMomentum();
         // float forceB = -( knockbackScale) * (std::abs(aMom) + std::abs(aAom));
         // float forceA = ( knockbackScale) * (0.05*std::abs(bMom) + std::abs(bAom));
-        float forceB = -std::max(5.f, std::min(20.f, ( knockbackScale * std::abs(bAom)*std::abs(bMom))));
-        float forceA = std::max(5.f, std::min(20.f, ( knockbackScale * std::abs(aAom)*std::abs(aMom))));
+        float forceB = std::max(5.f, std::min(50.f, ( knockbackScale * std::abs(bAom)*std::abs(bMom))));
+        float forceA = -std::max(5.f, std::min(50.f, ( knockbackScale * std::abs(aAom)*std::abs(aMom))));
         B.applyKnockback(forceA);
         A.applyKnockback(forceB);
         if(forceA != 0 || forceB !=0) A.incrementCollisionAmount();
