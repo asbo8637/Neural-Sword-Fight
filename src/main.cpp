@@ -70,9 +70,9 @@ public:
           m_armAngle(0.f),
           m_elbowAngle(0.f),
           m_wristAngle(0.f),
-          m_armLength(60.f),
-          m_forearmLength(70.f),
-          m_handLength(160.f),
+          m_armLength(50.f),
+          m_forearmLength(60.f),
+          m_handLength(80.f),
           m_isAlive(true),
           m_flipped(flipped)
     {
@@ -92,35 +92,43 @@ public:
 
     // New update method: we pass in 5 values (0..1)
     // [0] => foot X, [1] => bodyAngle, [2] => armAngle, [3] => elbowAngle, [4] => wristAngle
-    void updateFromNN(const std::array<float, 5> &controls)
+    void updateFromNN(const std::array<float, 4>& controls)
     {
         if (!m_isAlive)
             return;
+        
+        // Define boundaries for the foot's x position.
+        const float minX = 100.f;
+        const float maxX = 700.f;
+        
+        // Determine foot movement direction.
+        // If m_flipped is true, we want the bot to move right (positive x)
+        // so that it faces the other bot; otherwise, move left.
+        float direction = m_flipped ? 1.0f : -1.0f;
+        
+        // 1) Update foot x position.
+        m_footPos.x -= 2.0f * direction;
+        
+        float Pi = 3.14159f;
+        
+        // 2) Update body angle.
+        // First, update and clamp the angle.
+        // Let's assume the desired unclipped range for body angle is [0.3*Pi, 0.7*Pi]
+        m_bodyAngle = std::max(-1.3f * Pi, std::min(1.3f * Pi, m_bodyAngle + direction*controls[0] * m_speed));
+        
+        // For arm angle:
+        m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
+        m_armAngle = std::max(0.4f * Pi, std::min(0.6f * Pi, m_armAngle + controls[1] * m_speed));
+        m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
 
-        // 1) Map foot X from [0..1] to some desired range (e.g. [100..700])
-        float minX = 100.f;
-        float maxX = 700.f;
-        float isflipped = 0;
-
-        if(m_flipped)
-            isflipped = -m_speed;
-        else
-            isflipped = m_speed;
-        // We can keep footPos.y fixed or also map it if desired:
-        // m_footPos.y = <some constant> or from controls as well
-        m_footPos.x += 5*isflipped;
-        // 2) Map bodyAngle from [0..1] to e.g. [-π/2..+π/2]
-        float halfPi = 3.14159f * 0.25f;
-
-        m_bodyAngle = std::max(-halfPi, std::min(halfPi, 0.5f*m_bodyAngle+controls[0])); // clamp
-
-        m_armAngle = std::max(3.f*halfPi, std::min(halfPi, m_armAngle+controls[1])) * isflipped;
-
-        // 4) elbowAngle => similarly
-        m_elbowAngle = std::max(3.f*halfPi, std::min(halfPi, m_elbowAngle+controls[2])) * isflipped;
-
-        // 5) wristAngle => similarly
-        m_wristAngle = std::max(3.f*halfPi, std::min(halfPi, m_wristAngle+controls[3])) * isflipped;
+        // For elbow angle:
+        m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
+        m_elbowAngle = std::max(0.f * Pi, std::min(0.2f * Pi, m_elbowAngle + controls[2] * m_speed));
+        m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
+        // For wrist angle:
+        m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
+        m_wristAngle = std::max(-0.4f * Pi, std::min(-0.2f * Pi, m_wristAngle + controls[3] * m_speed));
+        m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
     }
 
     void kill() { m_isAlive = false; }
@@ -163,28 +171,37 @@ public:
     std::array<float, 5> getAllyValues() const {
         // Adjust the foot x position if m_flipped.
         float footX = m_footPos.x;
+        float temp_bodyAngle = m_bodyAngle;
+        float temp_armAngle = m_armAngle;
+        float temp_elbowAngle = m_elbowAngle;
+        float temp_wristAngle = m_wristAngle;
         if (m_flipped) {
             footX = 800 - footX;
+            float pi = 3.14159f;
+            temp_bodyAngle = - m_bodyAngle;
+            temp_armAngle = - m_armAngle;
+            temp_elbowAngle =  - m_elbowAngle;
+            temp_wristAngle = - m_wristAngle;
         }
         // Normalize footX from [100, 700] to [0, 1].
         float normFootX = (footX - 100.0f) / 600.0f;
-    
+        
         // Helper lambda to normalize an angle.
         auto normalizeAngle = [](float angle) -> float {
-            // Ensure angle is in [0, 2pi].
             if (angle < 0)
                 angle += 2.0f * 3.14159f;
             return angle / (2.0f * 3.14159f);
         };
-    
-        float normBodyAngle  = normalizeAngle(m_bodyAngle);
-        float normArmAngle   = normalizeAngle(m_armAngle);
-        float normElbowAngle = normalizeAngle(m_elbowAngle);
-        float normWristAngle = normalizeAngle(m_wristAngle);
-    
+        
+        float normBodyAngle  = normalizeAngle(temp_bodyAngle);
+        float normArmAngle   = normalizeAngle(temp_armAngle);
+        float normElbowAngle = normalizeAngle(temp_elbowAngle);
+        float normWristAngle = normalizeAngle(temp_wristAngle);
+        
         // Return ally values as [normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle]
         return { normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle };
     }
+    
     
     std::array<float, 6> getEnemyValues() const {
         sf::Vector2f swordStart, swordEnd;
@@ -259,14 +276,16 @@ public:
     }
 
 private:
-    // Compute geometry with body angle
+    // Compute the head position assuming m_bodyAngle is measured from the horizontal.
     sf::Vector2f getHeadPos() const
     {
+        // With 0 radians pointing to the right, use cosine for x and sine for y.
         float dx = m_bodyLength * std::sin(m_bodyAngle);
-        float dy = -m_bodyLength * std::cos(m_bodyAngle);
+        float dy = m_bodyLength * std::cos(m_bodyAngle);
         return sf::Vector2f(m_footPos.x + dx, m_footPos.y + dy);
     }
 
+    // Compute the shoulder position along the line from head to foot.
     sf::Vector2f getShoulderPos() const
     {
         sf::Vector2f headPos = getHeadPos();
@@ -274,32 +293,43 @@ private:
         float len = std::sqrt(footDir.x * footDir.x + footDir.y * footDir.y);
         if (len < 1e-6f)
             return headPos;
-        sf::Vector2f unitDir = sf::Vector2f(footDir.x / len, footDir.y / len);
+        sf::Vector2f unitDir(footDir.x / len, footDir.y / len);
+        // Offset the head position toward the foot by the shoulder offset.
         return headPos + unitDir * m_shoulderOffset;
     }
 
+    // Compute the elbow position based on the shoulder position and m_armAngle.
+    // m_armAngle is now measured from the horizontal.
     sf::Vector2f getElbowPos(const sf::Vector2f &shoulderPos) const
     {
         return sf::Vector2f(
-            shoulderPos.x + m_armLength * std::cos(m_armAngle),
-            shoulderPos.y + m_armLength * std::sin(m_armAngle));
+            shoulderPos.x + m_armLength * std::sin(m_armAngle),
+            shoulderPos.y + m_armLength * std::cos(m_armAngle)
+        );
     }
 
+    // Compute the wrist position by adding the forearm vector.
+    // The global angle at the elbow is m_armAngle + m_elbowAngle.
     sf::Vector2f getWristPos(const sf::Vector2f &elbowPos) const
     {
         float elbowGlobalAngle = m_armAngle + m_elbowAngle;
         return sf::Vector2f(
-            elbowPos.x + m_forearmLength * std::cos(elbowGlobalAngle),
-            elbowPos.y + m_forearmLength * std::sin(elbowGlobalAngle));
+            elbowPos.x + m_forearmLength * std::sin(elbowGlobalAngle),
+            elbowPos.y + m_forearmLength * std::cos(elbowGlobalAngle)
+        );
     }
 
+    // Compute the sword tip position by extending from the wrist.
+    // The global angle at the wrist is m_armAngle + m_elbowAngle + m_wristAngle.
     sf::Vector2f getSwordTip(const sf::Vector2f &wristPos) const
     {
         float wristGlobalAngle = m_armAngle + m_elbowAngle + m_wristAngle;
         return sf::Vector2f(
-            wristPos.x + m_handLength * std::cos(wristGlobalAngle),
-            wristPos.y + m_handLength * std::sin(wristGlobalAngle));
+            wristPos.x + m_handLength * std::sin(wristGlobalAngle),
+            wristPos.y + m_handLength * std::cos(wristGlobalAngle)
+        );
     }
+
 
     void drawLine(sf::RenderWindow &window,
                   const sf::Vector2f &start,
@@ -507,14 +537,15 @@ Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB){
 ////////////////////////////////////////////////////////////
 int main()
 {
-    int afterRounds=100;
+    int afterRounds=0;
     int rounds=0;
+    int lastWin=0; 
     sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
-    window.setFramerateLimit(60);
+    window.setFramerateLimit(100);
 
     std::vector<uint> topology = {11, 100, 100, 4};
-    Scalar evolutionRate = 0.005;
-    Scalar mutationRate = 0.4;
+    Scalar evolutionRate = 0.1;
+    Scalar mutationRate = 0.5;
     neural net1(topology, evolutionRate, mutationRate);
     neural net2(topology, evolutionRate, mutationRate);
 
@@ -523,8 +554,8 @@ int main()
     Bot botB(650.f, 400.f, true);
 
     // Example "walls"
-    float leftWallX = 50.f;
-    float rightWallX = 750.f;
+    float leftWallX = 100.f;
+    float rightWallX = 700.f;
 
     while (window.isOpen())
     {
@@ -546,8 +577,8 @@ int main()
             net1.propagateForward(inputForNet1);
             std::vector<Scalar> output = net1.getOutput();
             // Convert the output to a std::array<float, 5>
-            std::array<float, 5> controlsA;
-            std::copy_n(output.begin(), 5, controlsA.begin());
+            std::array<float, 4> controlsA;
+            std::copy_n(output.begin(), 4, controlsA.begin());
             botA.updateFromNN(controlsA);
         }
         else{
@@ -555,6 +586,7 @@ int main()
             botB = Bot(650.f, 400.f, true);
             rounds+=1;
             std::cout << "Bot B wins, round: " << rounds << std::endl;
+            net1=net2;
             net1.updateWeights();
             continue;
         }
@@ -564,8 +596,8 @@ int main()
             net2.propagateForward(inputForNet2);
             std::vector<Scalar> output = net2.getOutput();
             // Convert the output to a std::array<float, 5>
-            std::array<float, 5> controlsB;
-            std::copy_n(output.begin(), 5, controlsB.begin());
+            std::array<float, 4> controlsB;
+            std::copy_n(output.begin(), 4, controlsB.begin());
             botB.updateFromNN(controlsB);
         }
         else{
@@ -573,6 +605,7 @@ int main()
             botB = Bot(650.f, 400.f, true);
             rounds+=1;
             std::cout << "Bot A wins, round: " << rounds << std::endl;
+            net2=net1;
             net2.updateWeights();
             continue;
         }
