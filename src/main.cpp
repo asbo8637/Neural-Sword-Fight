@@ -147,10 +147,10 @@ public:
         newTip = sf::Vector2f(newTip.x - m_footPos.x, newTip.y);
         m_momentum += newTip - last_sword_pos;
         //float dx = (m_last_foot_pos.x - m_footPos.x) * direction;
-        float m_angle_momentum = std::max(0.f,(m_armAngle-last_arm_angle) + 
+        float m_angle_momentum = std::max(1.f,(m_armAngle-last_arm_angle) + 
         (m_elbowAngle-last_elbow_angle) + 
         (m_wristAngle-last_wrist_angle) + 
-        (m_bodyAngle-last_body_angle)-10);
+        (m_bodyAngle-last_body_angle)-2);
     }
 
     void kill() { m_isAlive = false; }
@@ -573,8 +573,8 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float bAom = B.getAngleMomentum();
         //B.applyKnockback(-std::max(collisions*4.f, (forceA * knockbackScale) * aMom * aMom * aAom));
         //A.applyKnockback(std::max(collisions*4.f, (forceB * knockbackScale) * bMom * bMom * bAom));
-        B.applyKnockback(-(forceA * knockbackScale) * aMom * std::sqrt(aAom));
-        A.applyKnockback((forceB * knockbackScale) * bMom * std::sqrt(bAom));
+        B.applyKnockback(-(forceA * knockbackScale) * aMom * A.getAngleMomentum());
+        A.applyKnockback((forceB * knockbackScale) * bMom * B.getAngleMomentum());
     }
 }
 
@@ -632,17 +632,17 @@ Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB){
 int main()
 {
     srand(static_cast<unsigned int>(time(0)));
-    int afterRounds=2500;
-    int timer = 10000;
+    int afterRounds=2000;
+    int timer = 500;
     int rounds=0;
     int lastLoss=0; 
     int consecutiveRounds=0;
     sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
-    window.setFramerateLimit(100);
+    window.setFramerateLimit(500);
 
-    std::vector<uint> topology = {11, 150, 150, 5};
+    std::vector<uint> topology = {11, 200, 200, 5};
     Scalar evolutionRate = 0.1;
-    Scalar mutationRate = 0.5;
+    Scalar mutationRate = 0.25;
     neural net1(topology, evolutionRate, mutationRate);
     neural net2(topology, evolutionRate, mutationRate);
 
@@ -657,7 +657,7 @@ int main()
     while (window.isOpen())
     {
         if(timer<0){
-            timer=1000;
+            timer=500;
             botA = Bot(150.f, 400.f, 90.f, false);
             botB = Bot(650.f, 400.f, 92.f, true);
             net1.updateWeights();
