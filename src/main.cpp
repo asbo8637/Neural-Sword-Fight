@@ -956,12 +956,12 @@ int main()
     // --- Round of 4: 2 matches ---
     std::cout << "\n==== ROUND OF 4 ====\n";
     {
-        bool switchBot = true;
+        bool switchBot = false;
 
         // Match (0 vs 2)
         std::cout << "Match 1 of Round of 4: Bot 0 vs Bot 2\n";
         nets[0] = learn(switchBot,
-                        nets[0], nets[2], 300,
+                        nets[0], nets[2], 100,
                         swordLen[0], swordLen[2],
                         speeds[0], speeds[2],
                         bodyLen[0], bodyLen[2]);
@@ -969,7 +969,7 @@ int main()
         // Match (4 vs 6)
         std::cout << "Match 2 of Round of 4: Bot 4 vs Bot 6\n";
         nets[4] = learn(switchBot,
-                        nets[4], nets[6], 300,
+                        nets[4], nets[6], 100,
                         swordLen[4], swordLen[6],
                         speeds[4], speeds[6],
                         bodyLen[4], bodyLen[6]);
@@ -978,10 +978,10 @@ int main()
     // --- Final: (0 vs 4) ---
     std::cout << "\n==== FINAL ROUND ====\n";
     {
-        bool switchBot = true;
+        bool switchBot = false;
         std::cout << "Final Match: Bot 0 vs Bot 4\n";
         nets[0] = learn(switchBot,
-                        nets[0], nets[4], 300,
+                        nets[0], nets[4], 100,
                         swordLen[0], swordLen[4],
                         speeds[0], speeds[4],
                         bodyLen[0], bodyLen[4]);
