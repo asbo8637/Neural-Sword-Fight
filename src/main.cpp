@@ -72,8 +72,8 @@ public:
           m_armAngle(0.f),
           m_elbowAngle(0.f),
           m_wristAngle(0.f),
-          m_armLength(50.f),
-          m_forearmLength(60.f),
+          m_armLength(30.f),
+          m_forearmLength(40.f),
           m_handLength(sword),
           m_isAlive(true),
           m_flipped(flipped),
@@ -125,7 +125,7 @@ public:
         
         // 1) Update foot x position.
         //m_footPos.x += 3.0f * direction * randomMovement();
-        m_footPos.x += 3.0f * direction * std::min(-0.2f, controls[4]);
+        m_footPos.x -= 2.f * direction;
         
         float Pi = 3.14159f;
         
@@ -574,19 +574,19 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float angleA = A.getSwordBodyAngle();
         float angleB = B.getSwordBodyAngle();
 
-        float forceSinA = std::fabs(std::sin(angleA));
-        float forceSinB = std::fabs(std::sin(angleB));
+        float forceSinA = std::fabs(std::cos(angleA));
+        float forceSinB = std::fabs(std::cos(angleB));
 
         int collisions = A.getCollisionAmount();
         float knockbackScale = collisions*0.4f;
-        float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
-        float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
+        float aMom = forceSinA*std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
+        float bMom = forceSinB*std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
         float bAom = B.getAngleMomentum();
         // float forceB = -( knockbackScale) * (std::abs(aMom) + std::abs(aAom));
         // float forceA = ( knockbackScale) * (0.05*std::abs(bMom) + std::abs(bAom));
-        float forceB = -forceSinB*std::max(5.f, std::min(80.f, ( knockbackScale * std::abs(bAom)*std::abs(bMom))));
-        float forceA = forceSinA*std::max(5.f, std::min(80.f, ( knockbackScale * std::abs(aAom)*std::abs(aMom))));
+        float forceB = -forceSinB*std::max(5.f, std::min(85.f, ( knockbackScale * std::abs(bAom)*std::abs(bMom))));
+        float forceA = forceSinA*std::max(5.f, std::min(85.f, ( knockbackScale * std::abs(aAom)*std::abs(aMom))));
         B.applyKnockback(forceB);
         A.applyKnockback(forceA);
         if(forceA != 0 || forceB !=0) A.incrementCollisionAmount();
@@ -657,8 +657,8 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
     window.setFramerateLimit(300);
 
     // Create two bots
-    Bot botA(150.f, 400.f, 80.f, false);
-    Bot botB(650.f, 400.f, 80.f, true);
+    Bot botA(150.f, 400.f, 130.f, false);
+    Bot botB(650.f, 400.f, 130.f, true);
 
     // Example "walls"
     float leftWallX = 100.f;
@@ -669,8 +669,8 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
     {
         if(timer<0){
             timer=1000;
-            botA = Bot(150.f, 400.f, 90.f, false);
-            botB = Bot(650.f, 400.f, 90.f, true);
+            botA = Bot(150.f, 400.f, 130.f, false);
+            botB = Bot(650.f, 400.f, 130.f, true);
             net1.updateWeights();
             net2.updateWeights();
             std::cout << "TIMER RUNG! Round: " << rounds << std::endl;
@@ -689,8 +689,8 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
         }
         else{
             timer=1000;
-            botA = Bot(150.f, 400.f, 90.f, false);
-            botB = Bot(650.f, 400.f, 90.f, true);
+            botA = Bot(150.f, 400.f, 130.f, false);
+            botB = Bot(650.f, 400.f, 130.f, true);
             rounds+=1;
             std::cout << "B WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
@@ -784,7 +784,7 @@ int main()
 {
     std::vector<uint> topology = {15, 100, 100, 5};
     Scalar evolutionRate = 0.1;
-    Scalar mutationRate = 0.3;
+    Scalar mutationRate = 0.5;
     neural net1(topology, evolutionRate, mutationRate);
     neural net2(topology, evolutionRate, mutationRate);
     neural net3(topology, evolutionRate, mutationRate);
@@ -792,7 +792,7 @@ int main()
 
     srand(static_cast<unsigned int>(time(0)));
     neural champ1 = learn(true, net1, net2, 500);
-    neural champ2 = learn(true, net3, net4, 2000);
+    neural champ2 = learn(true, net3, net4, 2500);
     neural champ3 = learn(false, champ1, champ2, 250);
     return 0;
 }
