@@ -3,6 +3,15 @@
 #include <cmath>
 #include <algorithm>
 #include <iostream>
+#include <Eigen/dense>
+#include <iostream>
+#include <vector>
+
+typedef float Scalar;
+typedef Eigen::MatrixXf Matrix;
+typedef Eigen::RowVectorXf RowVector;
+typedef Eigen::VectorXf ColVector;
+typedef unsigned int uint;
 
 ////////////////////////////////////////////////////////////
 // Quick geometry & collision helpers
@@ -265,6 +274,83 @@ private:
     sf::CircleShape m_head;
 };
 
+class neural {
+public:
+    // Constructor with default parameters
+    neural(std::vector<uint> topology, Scalar evolutionRate = 0.005f, Scalar mutationRate = 0.1f) {
+        this->topology = topology;
+        this->mutationRate = mutationRate;
+        this->evolutionRate = evolutionRate;
+        for (uint i = 0; i < topology.size(); i++) {
+            // For non-output layers, add one extra neuron for bias.
+            if (i == topology.size() - 1)
+                neuronLayers.push_back(new RowVector(topology[i]));
+            else
+                neuronLayers.push_back(new RowVector(topology[i] + 1));
+
+            // Set the bias neuron to 1.0 for non-output layers.
+            if (i != topology.size() - 1)
+                neuronLayers.back()->coeffRef(topology[i]) = 1.0f;
+
+            // Initialize weights matrix (starting from the second layer)
+            if (i > 0) {
+                if (i != topology.size() - 1) {
+                    // Hidden layers: include bias for both previous and current layer.
+                    weights.push_back(new Matrix(topology[i - 1] + 1, topology[i] + 1));
+                    *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i] + 1);
+                } else {
+                    // Output layer: previous layer includes bias; output layer does not.
+                    weights.push_back(new Matrix(topology[i - 1] + 1, topology[i]));
+                    *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i]);
+                }
+            }
+        }
+    }
+
+    // Forward propagation: calculates activations through the network.
+    void propagateForward(RowVector& input) {
+        // Set the input layer (excluding the bias element)
+        neuronLayers.front()->block(0, 0, 1, neuronLayers.front()->size() - 1) = input;
+    
+        // Forward propagation: multiply by weights and apply activation function.
+        for (uint i = 1; i < topology.size(); i++) {
+            (*neuronLayers[i]) = (*neuronLayers[i - 1]) * (*weights[i - 1]);
+            neuronLayers[i]->block(0, 0, 1, topology[i])
+                = neuronLayers[i]->block(0, 0, 1, topology[i])
+                    .unaryExpr([this](Scalar x) { return activationFunction(x); });
+        }
+    }
+
+    // Mutate weights based on a mutation probability.
+    void updateWeights() {
+        // Iterate over each weight matrix.
+        for (uint i = 0; i < weights.size(); i++) {
+            for (uint r = 0; r < weights[i]->rows(); r++) {
+                for (uint c = 0; c < weights[i]->cols(); c++) {
+                    Scalar randVal = static_cast<Scalar>(rand()) / RAND_MAX;
+                    if (randVal < mutationRate) {  // use the member mutationRate
+                        Scalar mutation = evolutionRate * (2.0f * static_cast<Scalar>(rand()) / RAND_MAX - 1.0f);
+                        weights[i]->coeffRef(r, c) += mutation;
+                    }
+                }
+            }
+        }
+    }
+
+    // Activation function: sigmoid in this case.
+    Scalar activationFunction(Scalar x) {
+        return 1.0f / (1.0f + std::exp(-x));
+    }
+
+    // Members
+    std::vector<Matrix*> weights;
+    std::vector<RowVector*> neuronLayers;
+    std::vector<uint> topology;
+    Scalar evolutionRate;
+    Scalar mutationRate;
+};
+
+
 ////////////////////////////////////////////////////////////
 // Collision logic
 ////////////////////////////////////////////////////////////
@@ -328,6 +414,12 @@ int main()
     sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
     window.setFramerateLimit(60);
 
+    std::vector<uint> topology = {11, 100, 5};
+    Scalar evolutionRate = 0.005;
+    Scalar mutationRate = 0.1;
+    neural net(topology, evolutionRate, mutationRate);
+
+<<<<<<< HEAD
     // Create two bots
     Bot botA(150.f, 400.f, false);
     Bot botB(650.f, 400.f, true);
@@ -337,6 +429,16 @@ int main()
     // In a real neural-net scenario, you'd get these from your forward pass.
     std::array<float, 5> controlsA = {{0.f, 0.f, 0.f, 0.f, 0.f}};
     std::array<float, 5> controlsB = {{1.f, 1.f, 1.f, 1.f, 1.f}};
+=======
+    std::vector<uint> topology = {11, 100, 5};
+    Scalar evolutionRate = 0.005;
+    Scalar mutationRate = 0.1;
+    neural net(topology, evolutionRate, mutationRate);
+
+    // Two bots, left (not flipped) vs. right (flipped)
+    Bot botA(250.f, 400.f, false);
+    Bot botB(550.f, 400.f, true);
+>>>>>>> upstream/main
 
     // Example "walls"
     float leftWallX = 50.f;
