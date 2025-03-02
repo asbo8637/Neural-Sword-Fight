@@ -557,7 +557,7 @@ class neural {
 ////////////////////////////////////////////////////////////
 // Collision logic
 ////////////////////////////////////////////////////////////
-void checkSwordSwordCollision(Bot &A, Bot &B)
+void checkSwordSwordCollision(Bot &A, Bot &B, bool switch_bot)
 {
     if (!A.isAlive() || !B.isAlive())
         return;
@@ -577,14 +577,17 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
 
         int collisions = A.getCollisionAmount();
         float knockbackScale = collisions*6.f;
-        float aMom = forceSinA*std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
-        float bMom = forceSinA*std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
+        float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
+        float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
         float bAom = B.getAngleMomentum();
         // float forceB = -( knockbackScale) * (std::abs(aMom) + std::abs(aAom));
         // float forceA = ( knockbackScale) * (0.05*std::abs(bMom) + std::abs(bAom));
-        float forceB = std::max(5.f, std::min(50.f, ( knockbackScale * std::abs(bAom)*std::abs(bMom))));
-        float forceA = -std::max(5.f, std::min(50.f, ( knockbackScale * std::abs(aAom)*std::abs(aMom))));
+        if(!switch_bot){
+            forceSinB = 1;
+        }
+        float forceB = forceSinB*std::max(5.f, std::min(50.f, ( knockbackScale * std::abs(bAom)*std::abs(bMom))));
+        float forceA = -forceSinB*std::max(5.f, std::min(50.f, ( knockbackScale * std::abs(aAom)*std::abs(aMom))));
         B.applyKnockback(forceA);
         A.applyKnockback(forceB);
         if(forceA != 0 || forceB !=0) A.incrementCollisionAmount();
@@ -610,9 +613,9 @@ void checkSwordHitsBody(Bot &attacker, Bot &victim)
     }
 }
 
-void handleCollisions(Bot &A, Bot &B)
+void handleCollisions(Bot &A, Bot &B, bool switch_bot)
 {
-    checkSwordSwordCollision(A, B);
+    checkSwordSwordCollision(A, B, switch_bot);
     checkSwordHitsBody(A, B);
     checkSwordHitsBody(B, A);
 }
@@ -728,7 +731,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
 
 
         // Check collisions
-        handleCollisions(botA, botB);
+        handleCollisions(botA, botB, switch_bot);
         // Kill if they cross walls
         if (botA.isAlive())
         {
