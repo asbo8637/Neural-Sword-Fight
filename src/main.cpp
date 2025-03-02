@@ -742,7 +742,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count,
              float bodyA, float bodyB)
 {
     int afterRounds = round_count;
-    int endRounds = round_count + 50;
+    int endRounds = round_count + 1000;
     int timer = 500;
     int rounds = 0;
     int lastLoss = 0;
@@ -751,7 +751,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count,
     // Create a window only if we want to visualize the fights.
     // You can control how many rounds you want to observe in real-time.
     sf::RenderWindow window(sf::VideoMode(800, 600), "Tournament Match");
-    window.setFramerateLimit(300);
+    window.setFramerateLimit(600);
 
     // Create two bots with the given attributes
     Bot botA(150.f, 400.f, swordA, speedA, bodyA, false);
@@ -918,13 +918,13 @@ int main()
     srand(static_cast<unsigned int>(time(0)));
 
     // Define 8 different sets of attributes.
-    std::vector<float> swordLen = {100.f, 110.f, 120.f, 130.f,
+    std::vector<float> swordLen = {40.f, 40.f, 120.f, 130.f,
                                    140.f, 150.f, 160.f, 170.f};
 
-    std::vector<float> speeds = {0.08f, 0.07f, 0.06f, 0.05f,
+    std::vector<float> speeds = {0.06f, 0.06f, 0.06f, 0.05f,
                                  0.04f, 0.035f, 0.03f, 0.02f};
 
-    std::vector<float> bodyLen = {90.f, 100.f, 105.f, 110.f,
+    std::vector<float> bodyLen = {200.f, 200.f, 105.f, 110.f,
                                   120.f, 130.f, 140.f, 150.f};
 
     // -------------------------------------------------------------
@@ -944,7 +944,7 @@ int main()
 
         bool switchBot = true;
         nets[idxA] = learn(switchBot,
-                           nets[idxA], nets[idxB], 500,
+                           nets[idxA], nets[idxB], 10000,
                            swordLen[idxA], swordLen[idxB],
                            speeds[idxA], speeds[idxB],
                            bodyLen[idxA], bodyLen[idxB]);
@@ -990,6 +990,11 @@ int main()
     std::cout << "\n=============================================\n";
     std::cout << "  TOURNAMENT WINNER IS AT INDEX 0!\n";
     std::cout << "=============================================\n\n";
+
+
+
+
+
 
     return 0;
 }
