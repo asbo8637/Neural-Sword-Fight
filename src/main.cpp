@@ -585,8 +585,8 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float bAom = B.getAngleMomentum();
         // float forceB = -( knockbackScale) * (std::abs(aMom) + std::abs(aAom));
         // float forceA = ( knockbackScale) * (0.05*std::abs(bMom) + std::abs(bAom));
-        float forceB = -forceSinB*std::max(5.f, std::min(50.f, ( knockbackScale * std::abs(bAom)*std::abs(bMom))));
-        float forceA = forceSinA*std::max(5.f, std::min(50.f, ( knockbackScale * std::abs(aAom)*std::abs(aMom))));
+        float forceB = -forceSinB*std::max(5.f, std::min(80.f, ( knockbackScale * std::abs(bAom)*std::abs(bMom))));
+        float forceA = forceSinA*std::max(5.f, std::min(80.f, ( knockbackScale * std::abs(aAom)*std::abs(aMom))));
         B.applyKnockback(forceB);
         A.applyKnockback(forceA);
         if(forceA != 0 || forceB !=0) A.incrementCollisionAmount();
