@@ -232,9 +232,11 @@ public:
         return { normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle };
     }
     
-    int getCollisionAmount() {
-        m_collision_amount++;
+    int getCollisionAmount() const {
         return m_collision_amount;
+    }
+    void incrementCollisionAmount() {
+        m_collision_amount++;
     }
     
     std::array<float, 6> getEnemyValues() const {
@@ -571,10 +573,14 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
         float bAom = B.getAngleMomentum();
-        //B.applyKnockback(-std::max(collisions*4.f, (forceA * knockbackScale) * aMom * aMom * aAom));
-        //A.applyKnockback(std::max(collisions*4.f, (forceB * knockbackScale) * bMom * bMom * bAom));
-        B.applyKnockback(-(forceA * knockbackScale) * aMom * A.getAngleMomentum());
-        A.applyKnockback((forceB * knockbackScale) * bMom * B.getAngleMomentum());
+        forceB =-(forceA * knockbackScale) * aMom * A.getAngleMomentum();
+        forceA = (forceB * knockbackScale) * bMom * B.getAngleMomentum();
+        B.applyKnockback(forceB);
+        A.applyKnockback(forceA);
+        if(forceA!=0 || forceB!=0){
+            A.incrementCollisionAmount();
+        }
+        
     }
 }
 
@@ -632,15 +638,15 @@ Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB){
 int main()
 {
     srand(static_cast<unsigned int>(time(0)));
-    int afterRounds=5000;
+    int afterRounds=2500;
     int timer = 500;
     int rounds=0;
     int lastLoss=0; 
     int consecutiveRounds=0;
     sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
-    window.setFramerateLimit(500);
+    window.setFramerateLimit(200);
 
-    std::vector<uint> topology = {11, 200, 200, 5};
+    std::vector<uint> topology = {11, 100, 100, 5};
     Scalar evolutionRate = 0.1;
     Scalar mutationRate = 0.25;
     neural net1(topology, evolutionRate, mutationRate);
