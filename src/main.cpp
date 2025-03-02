@@ -81,8 +81,8 @@ public:
           m_momentum(0.f, 0.f),
           m_angle_momentum(0)
     {
-        // Circles for joints
-        m_jointCircle.setRadius(5.f);
+        // Circles for joints   
+        m_jointCircle.setRadius(2.f);
         m_jointCircle.setOrigin(5.f, 5.f);
         m_jointCircle.setFillColor(sf::Color::Red);
 
@@ -116,8 +116,8 @@ public:
           m_angle_momentum(0)
     {
         // Circles for joints
-        m_jointCircle.setRadius(5.f);
-        m_jointCircle.setOrigin(5.f, 5.f);
+        m_jointCircle.setRadius(2.f);
+        m_jointCircle.setOrigin(2.f, 2.f);
         m_jointCircle.setFillColor(sf::Color::Red);
 
         m_head.setRadius(10.f);
@@ -314,6 +314,65 @@ public:
                 m_momentum.x, m_momentum.y};
     }
 
+    void drawSwordRectangle(sf::RenderWindow &window, const sf::Vector2f &wristPos, const sf::Vector2f &swordTip, sf::Color color)
+    {
+        // Compute the difference vector and its length.
+        sf::Vector2f diff = swordTip - wristPos;
+        float length = std::sqrt(diff.x * diff.x + diff.y * diff.y);
+
+        // Determine the angle (in degrees) from the horizontal.
+        float angle = std::atan2(diff.y, diff.x) * 180.f / 3.14159f;
+
+        // Create a rectangle with the calculated length and a fixed thickness (say, 5 pixels).
+        sf::RectangleShape rect(sf::Vector2f(length, 5.0f));
+        rect.setFillColor(color);
+
+        // Set the origin to the left-center so that the rectangle starts at wristPos.
+        rect.setOrigin(0.f, rect.getSize().y / 2.f);
+
+        // Position and rotate the rectangle.
+        rect.setPosition(wristPos);
+        rect.setRotation(angle);
+
+        window.draw(rect);
+    }
+
+    void drawFace(sf::RenderWindow &window, const sf::Vector2f &faceCenter) {
+        // Face circle.
+        float faceRadius = 15.f;
+        sf::CircleShape face(faceRadius);
+        face.setFillColor(sf::Color::Yellow);
+        face.setOutlineThickness(2.f);
+        face.setOutlineColor(sf::Color::Black);
+        // Center the face by setting its origin to its center.
+        face.setOrigin(faceRadius, faceRadius);
+        face.setPosition(faceCenter);
+        window.draw(face);
+    
+        // Eyes: two small circles.
+        float eyeRadius = 2.f;
+        sf::CircleShape leftEye(eyeRadius);
+        sf::CircleShape rightEye(eyeRadius);
+        leftEye.setFillColor(sf::Color::Black);
+        rightEye.setFillColor(sf::Color::Black);
+        // Position eyes relative to the faceCenter.
+        leftEye.setOrigin(eyeRadius, eyeRadius);
+        rightEye.setOrigin(eyeRadius, eyeRadius);
+        leftEye.setPosition(faceCenter.x - faceRadius/2, faceCenter.y - faceRadius/3);
+        rightEye.setPosition(faceCenter.x + faceRadius/2, faceCenter.y - faceRadius/3);
+        window.draw(leftEye);
+        window.draw(rightEye);
+    
+        // Mouth: a simple line for a smile.
+        sf::VertexArray mouth(sf::Lines, 2);
+        mouth[0].position = sf::Vector2f(faceCenter.x - faceRadius/2, faceCenter.y + faceRadius/4);
+        mouth[0].color = sf::Color::Black;
+        mouth[1].position = sf::Vector2f(faceCenter.x + faceRadius/2, faceCenter.y + faceRadius/4);
+        mouth[1].color = sf::Color::Black;
+        window.draw(mouth);
+    }
+    
+
     void draw(sf::RenderWindow &window)
     {
         if (!m_isAlive)
@@ -331,14 +390,15 @@ public:
         // Arm
         drawLine(window, shoulderPos, elbowPos, sf::Color::White);
         drawLine(window, elbowPos, wristPos, sf::Color::White);
-        drawLine(window, wristPos, swordTip, sf::Color::Yellow);
+        drawSwordRectangle(window, wristPos, swordTip, sf::Color::Red);
+        
 
         // Circles
         m_jointCircle.setPosition(m_footPos);
         window.draw(m_jointCircle);
 
-        m_head.setPosition(headPos);
-        window.draw(m_head);
+        drawFace(window, headPos);
+
 
         m_jointCircle.setPosition(shoulderPos);
         window.draw(m_jointCircle);
@@ -796,16 +856,25 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count,
 
         // Walls
         sf::VertexArray lw(sf::Lines, 2);
-        lw[0].position = sf::Vector2f(leftWallX, 0.f);
+        lw[0].position = sf::Vector2f(leftWallX, 0.f);   // Top of wall at y=0
         lw[0].color = sf::Color::Magenta;
-        lw[1].position = sf::Vector2f(leftWallX, 600.f);
+        lw[1].position = sf::Vector2f(leftWallX, 400.f); // Bottom of wall at y=400
         lw[1].color = sf::Color::Magenta;
         window.draw(lw);
+        
+
+        sf::VertexArray horizontalLine(sf::Lines, 2);
+        horizontalLine[0].position = sf::Vector2f(100.f, 400.f);
+        horizontalLine[0].color = sf::Color::Magenta;
+        horizontalLine[1].position = sf::Vector2f(700.f, 400.f);
+        horizontalLine[1].color = sf::Color::Magenta;
+        window.draw(horizontalLine);
+
 
         sf::VertexArray rw(sf::Lines, 2);
         rw[0].position = sf::Vector2f(rightWallX, 0.f);
         rw[0].color = sf::Color::Magenta;
-        rw[1].position = sf::Vector2f(rightWallX, 600.f);
+        rw[1].position = sf::Vector2f(rightWallX, 400.f);
         rw[1].color = sf::Color::Magenta;
         window.draw(rw);
 
@@ -838,7 +907,7 @@ int main()
     Scalar evolutionRate = 0.1f;
     Scalar mutationRate = 0.5f;
 
-    // Create 8 neural networks
+    // Create 8 neural networks.
     std::vector<neural> nets;
     nets.reserve(8);
     for (int i = 0; i < 8; i++)
@@ -848,9 +917,7 @@ int main()
 
     srand(static_cast<unsigned int>(time(0)));
 
-    // Define 8 different sets of attributes:
-    // Balanced so that a longer sword => slower speed, etc.
-    // (swordLen[i], speeds[i], bodyLen[i]) for each bot i
+    // Define 8 different sets of attributes.
     std::vector<float> swordLen = {100.f, 110.f, 120.f, 130.f,
                                    140.f, 150.f, 160.f, 170.f};
 
@@ -865,33 +932,34 @@ int main()
     // -------------------------------------------------------------
 
     // --- Round of 8: 4 matches ---
+    std::cout << "\n==== ROUND OF 8 ====\n";
     // Matches: (0 vs 1), (2 vs 3), (4 vs 5), (6 vs 7)
     // Winners stored back in indices 0,2,4,6
     for (int i = 0; i < 4; i++)
     {
         int idxA = 2 * i;
         int idxB = 2 * i + 1;
+        std::cout << "Match " << i+1 << " of Round of 8: Bot " << idxA 
+                  << " vs Bot " << idxB << "\n";
 
         bool switchBot = true;
-        // Let each pair train/fight for 300 rounds (a bit shorter for speed):
         nets[idxA] = learn(switchBot,
-                           nets[idxA], nets[idxB], 300,
+                           nets[idxA], nets[idxB], 500,
                            swordLen[idxA], swordLen[idxB],
                            speeds[idxA], speeds[idxB],
                            bodyLen[idxA], bodyLen[idxB]);
 
-        // Attributes (we assume the champion remains in idxA)
-        swordLen[idxA] = swordLen[idxA];
-        speeds[idxA] = speeds[idxA];
-        bodyLen[idxA] = bodyLen[idxA];
+        // Assume the winner remains at idxA.
+        // (Attributes remain the same for the champion.)
     }
 
     // --- Round of 4: 2 matches ---
-    // Winners from above are at indices [0,2,4,6].
+    std::cout << "\n==== ROUND OF 4 ====\n";
     {
         bool switchBot = true;
 
         // Match (0 vs 2)
+        std::cout << "Match 1 of Round of 4: Bot 0 vs Bot 2\n";
         nets[0] = learn(switchBot,
                         nets[0], nets[2], 300,
                         swordLen[0], swordLen[2],
@@ -899,6 +967,7 @@ int main()
                         bodyLen[0], bodyLen[2]);
 
         // Match (4 vs 6)
+        std::cout << "Match 2 of Round of 4: Bot 4 vs Bot 6\n";
         nets[4] = learn(switchBot,
                         nets[4], nets[6], 300,
                         swordLen[4], swordLen[6],
@@ -907,8 +976,10 @@ int main()
     }
 
     // --- Final: (0 vs 4) ---
+    std::cout << "\n==== FINAL ROUND ====\n";
     {
         bool switchBot = true;
+        std::cout << "Final Match: Bot 0 vs Bot 4\n";
         nets[0] = learn(switchBot,
                         nets[0], nets[4], 300,
                         swordLen[0], swordLen[4],
