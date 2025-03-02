@@ -100,11 +100,11 @@ public:
     void updateFromNN(const std::array<float, 5>& controls)
     {
         sf::Vector2f last_sword_pos = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
+        last_sword_pos = sf::Vector2f(last_sword_pos.x - m_footPos.x, last_sword_pos.y);
         float last_wrist_angle = m_wristAngle;
         float last_elbow_angle = m_elbowAngle;
         float last_arm_angle = m_armAngle;
         float last_body_angle = m_bodyAngle;
-        sf::Vector2f m_last_foot_pos = m_footPos;
         if (!m_isAlive)
             return;
         
@@ -118,7 +118,7 @@ public:
         float direction = m_flipped ? 1.0f : -1.0f;
         
         // 1) Update foot x position.
-        m_footPos.x -= 2.0f * direction * controls[4];
+        m_footPos.x -= 3.0f * direction * controls[4];
         
         float Pi = 3.14159f;
         
@@ -141,13 +141,16 @@ public:
         m_wristAngle = std::max(-0.4f * Pi, std::min(-0.2f * Pi, m_wristAngle + controls[3] * m_speed));
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
 
+
+        sf::Vector2f newTip = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
+        newTip = sf::Vector2f(newTip.x - m_footPos.x, newTip.y);
+        m_momentum += newTip - last_sword_pos;
         m_momentum = sf::Vector2f(m_momentum.x*0.9, m_momentum.y*0.9);
-        m_momentum += getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
         //float dx = (m_last_foot_pos.x - m_footPos.x) * direction;
-        float m_angle_momentum = (m_armAngle-last_arm_angle) + 
+        float m_angle_momentum = std::max(0.f,(m_armAngle-last_arm_angle) + 
         (m_elbowAngle-last_elbow_angle) + 
         (m_wristAngle-last_wrist_angle) + 
-        (m_bodyAngle-last_body_angle);
+        (m_bodyAngle-last_body_angle)-10);
     }
 
     void kill() { m_isAlive = false; }
@@ -401,99 +404,144 @@ private:
 };
 
 class neural {
-public:
-    // Constructor with default parameters
-    neural(std::vector<uint> topology, Scalar evolutionRate = 0.005f, Scalar mutationRate = 0.1f) {
-        this->topology = topology;
-        this->mutationRate = mutationRate;
-        this->evolutionRate = evolutionRate;
-        for (uint i = 0; i < topology.size(); i++) {
-            // For non-output layers, add one extra neuron for bias.
-            if (i == topology.size() - 1)
-                neuronLayers.push_back(new RowVector(topology[i]));
-            else
-                neuronLayers.push_back(new RowVector(topology[i] + 1));
-
-            // Set the bias neuron to 1.0 for non-output layers.
-            if (i != topology.size() - 1)
-                neuronLayers.back()->coeffRef(topology[i]) = 1.0f;
-
-            // Initialize weights matrix (starting from the second layer)
-            if (i > 0) {
-                if (i != topology.size() - 1) {
-                    // Hidden layers: include bias for both previous and current layer.
-                    weights.push_back(new Matrix(topology[i - 1] + 1, topology[i] + 1));
-                    *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i] + 1);
-                } else {
-                    // Output layer: previous layer includes bias; output layer does not.
-                    weights.push_back(new Matrix(topology[i - 1] + 1, topology[i]));
-                    *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i]);
-                }
+    public:
+        // Constructor with default parameters.
+        neural(std::vector<uint> topology, Scalar evolutionRate = 0.005f, Scalar mutationRate = 0.1f) {
+            this->topology = topology;
+            this->evolutionRate = evolutionRate;
+            this->mutationRate = mutationRate;
+            allocateLayersAndWeights();
+        }
+        
+        // Copy constructor (deep copy)
+        neural(const neural &other) {
+            topology = other.topology;
+            evolutionRate = other.evolutionRate;
+            mutationRate = other.mutationRate;
+            allocateLayersAndWeights();
+            // Copy weights
+            for (size_t i = 0; i < weights.size(); i++) {
+                *weights[i] = *other.weights[i];
             }
         }
-    }
-
-    // Forward propagation: calculates activations through the network.
-    void propagateForward(RowVector& input) {
-        // Set the input layer (excluding the bias element)
-        neuronLayers.front()->block(0, 0, 1, neuronLayers.front()->size() - 1) = input;
-    
-        // Forward propagation: multiply by weights and apply activation function.
-        for (uint i = 1; i < topology.size(); i++) {
-            (*neuronLayers[i]) = (*neuronLayers[i - 1]) * (*weights[i - 1]);
-            neuronLayers[i]->block(0, 0, 1, topology[i]) = neuronLayers[i]->block(0, 0, 1, topology[i]).unaryExpr([this](Scalar x) { return activationFunction(x); });
+        
+        // Copy assignment operator (deep copy)
+        neural& operator=(const neural &other) {
+            if (this != &other) {
+                // First, free current memory.
+                for (Matrix* w : weights) { delete w; }
+                for (RowVector* layer : neuronLayers) { delete layer; }
+                weights.clear();
+                neuronLayers.clear();
+                
+                topology = other.topology;
+                evolutionRate = other.evolutionRate;
+                mutationRate = other.mutationRate;
+                allocateLayersAndWeights();
+                // Copy weights.
+                for (size_t i = 0; i < weights.size(); i++) {
+                    *weights[i] = *other.weights[i];
+                }
+            }
+            return *this;
         }
-    }
-
-    std::vector<Scalar> getOutput() const {
-        // The output layer is the last neuron layer.
-        const RowVector* outputLayer = neuronLayers.back();
-        std::vector<Scalar> output(topology.back());
-        for (uint i = 0; i < topology.back(); i++) {
-            // Multiply by 2 and subtract 1 to transform range from [0,1] to [-1,1]
-            output[i] = 2 * (*outputLayer)(i) - 1;
+        
+        // Destructor: clean up allocated weights and neuron layers.
+        ~neural() {
+            for (Matrix* w : weights)
+                delete w;
+            for (RowVector* layer : neuronLayers)
+                delete layer;
         }
-        return output;
-    }
-    
-
-    // Mutate weights based on a mutation probability.
-    void updateWeights() {
-        // Iterate over each weight matrix.
-        for (uint i = 0; i < weights.size(); i++) {
-            for (uint r = 0; r < weights[i]->rows(); r++) {
-                for (uint c = 0; c < weights[i]->cols(); c++) {
-                    Scalar randVal = static_cast<Scalar>(rand()) / RAND_MAX;
-                    if (randVal < mutationRate) {  // use the member mutationRate
-                        Scalar mutation = evolutionRate * (2.0f * static_cast<Scalar>(rand()) / RAND_MAX - 1.0f);
-                        weights[i]->coeffRef(r, c) += mutation;
+        
+        // Forward propagation: calculates activations through the network.
+        void propagateForward(RowVector& input) {
+            // Set the input layer (excluding the bias element).
+            neuronLayers.front()->block(0, 0, 1, neuronLayers.front()->size() - 1) = input;
+        
+            // For each subsequent layer, compute weighted sum and apply activation.
+            for (size_t i = 1; i < topology.size(); i++) {
+                (*neuronLayers[i]) = (*neuronLayers[i - 1]) * (*weights[i - 1]);
+                neuronLayers[i]->block(0, 0, 1, topology[i]) =
+                    neuronLayers[i]->block(0, 0, 1, topology[i]).unaryExpr([this](Scalar x) {
+                        return activationFunction(x);
+                    });
+            }
+        }
+        
+        // getOutput returns the activated outputs from the final layer, mapped from [0,1] to [-1,1].
+        std::vector<Scalar> getOutput() const {
+            const RowVector* outputLayer = neuronLayers.back();
+            std::vector<Scalar> output(topology.back());
+            for (size_t i = 0; i < topology.back(); i++) {
+                output[i] = 2 * (*outputLayer)(i) - 1;
+            }
+            return output;
+        }
+        
+        // Mutate weights randomly based on the mutation rate.
+        void updateWeights() {
+            for (size_t i = 0; i < weights.size(); i++) {
+                for (size_t r = 0; r < weights[i]->rows(); r++) {
+                    for (size_t c = 0; c < weights[i]->cols(); c++) {
+                        Scalar randVal = static_cast<Scalar>(rand()) / RAND_MAX;
+                        if (randVal < mutationRate) {
+                            Scalar mutation = evolutionRate * (2.0f * static_cast<Scalar>(rand()) / RAND_MAX - 1.0f);
+                            weights[i]->coeffRef(r, c) += mutation;
+                        }
                     }
                 }
             }
         }
-    }
-
-    // Activation function: sigmoid in this case.
-    Scalar activationFunction(Scalar x) {
-        return 1.0f / (1.0f + std::exp(-x));
-    }
-
-    // Clone method to create a copy of the neural network.
-    neural clone() const {
-        neural copy(this->topology, this->evolutionRate, this->mutationRate);
-        for (size_t i = 0; i < this->weights.size(); ++i) {
-            *copy.weights[i] = *this->weights[i];
+        
+        // Activation function: sigmoid.
+        Scalar activationFunction(Scalar x) {
+            return 1.0f / (1.0f + std::exp(-x));
         }
-        return copy;
-    }
+        
+        // Clone method to create a copy of the neural network.
+        neural clone() const {
+            return neural(*this); // Uses the copy constructor.
+        }
+        
+        // Members.
+        std::vector<Matrix*> weights;
+        std::vector<RowVector*> neuronLayers;
+        std::vector<uint> topology;
+        Scalar evolutionRate;
+        Scalar mutationRate;
+        
+    private:
+        // Helper function to allocate neuron layers and weight matrices.
+        void allocateLayersAndWeights() {
+            // Create neuron layers.
+            for (size_t i = 0; i < topology.size(); i++) {
+                if (i == topology.size() - 1)
+                    neuronLayers.push_back(new RowVector(topology[i]));  // Output layer.
+                else
+                    neuronLayers.push_back(new RowVector(topology[i] + 1)); // Hidden/input layers with bias.
+        
+                if (i != topology.size() - 1)
+                    neuronLayers.back()->coeffRef(topology[i]) = 1.0f;
+        
+                // Allocate weight matrices.
+                if (i > 0) {
+                    if (i != topology.size() - 1) {
+                        // Hidden layers: previous layer (with bias) to current layer (with bias).
+                        weights.push_back(new Matrix(topology[i - 1] + 1, topology[i] + 1));
+                        *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i] + 1);
+                    } else {
+                        // Output layer: previous layer (with bias) to output layer (no bias).
+                        weights.push_back(new Matrix(topology[i - 1] + 1, topology[i]));
+                        *weights.back() = Matrix::Random(topology[i - 1] + 1, topology[i]);
+                    }
+                }
+            }
+        }
+    };
+    
+    
 
-    // Members
-    std::vector<Matrix*> weights;
-    std::vector<RowVector*> neuronLayers;
-    std::vector<uint> topology;
-    Scalar evolutionRate;
-    Scalar mutationRate;
-};
 
 
 ////////////////////////////////////////////////////////////
@@ -514,17 +562,19 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float angleA = A.getSwordBodyAngle();
         float angleB = B.getSwordBodyAngle();
 
-        float forceA = std::fabs(std::sin(angleA));
-        float forceB = std::fabs(std::sin(angleB));
+        float forceA = std::fabs(std::cos(angleA));
+        float forceB = std::fabs(std::cos(angleB));
 
         int collisions = A.getCollisionAmount();
-        float knockbackScale = collisions*0.05f;
+        float knockbackScale = collisions*0.001f;
         float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
         float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
         float bAom = B.getAngleMomentum();
-        B.applyKnockback(std::max(20.f, (forceA * knockbackScale) * aMom * aMom * aAom * aAom));
-        A.applyKnockback(-std::max(20.f, (forceB * knockbackScale) * bMom * bMom * bAom * bAom));
+        //B.applyKnockback(-std::max(collisions*4.f, (forceA * knockbackScale) * aMom * aMom * aAom));
+        //A.applyKnockback(std::max(collisions*4.f, (forceB * knockbackScale) * bMom * bMom * bAom));
+        B.applyKnockback(-(forceA * knockbackScale) * aMom);
+        A.applyKnockback((forceB * knockbackScale) * bMom);
     }
 }
 
@@ -585,8 +635,9 @@ int main()
     int afterRounds=1000;
     int rounds=0;
     int lastLoss=0; 
-    sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
-    window.setFramerateLimit(30);
+    int consecutiveRounds=0;
+    sf::RenderWindow window(sf::VideoMode(1000, 800), "NN Control Example");
+    window.setFramerateLimit(200);
 
     std::vector<uint> topology = {11, 100, 100, 5};
     Scalar evolutionRate = 0.1;
@@ -631,9 +682,11 @@ int main()
             botB = Bot(650.f, 400.f, true);
             rounds+=1;
             std::cout << "Bot B wins, round: " << rounds << std::endl;
-            if(lastLoss!=1){
-                net1=net2.clone();;
+            consecutiveRounds+=1;
+            if(lastLoss!=1 || consecutiveRounds>30){
+                net1=net2.clone();
                 lastLoss=1;
+                consecutiveRounds=0;
             }
             net1.updateWeights();
             continue;
@@ -653,9 +706,11 @@ int main()
             botB = Bot(650.f, 400.f, true);
             rounds+=1;
             std::cout << "Bot A wins, round: " << rounds << std::endl;
-            if(lastLoss!=2){
+            consecutiveRounds+=1;
+            if(lastLoss!=2 || consecutiveRounds>30){
                 net2 = net1.clone();
                 lastLoss=2;
+                consecutiveRounds = 0;
             }
             net2.updateWeights();
             continue;
