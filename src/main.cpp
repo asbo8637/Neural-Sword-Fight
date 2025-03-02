@@ -1,8 +1,12 @@
 #include <SFML/Graphics.hpp>
 #include <random>
 #include <cmath>
+#include <algorithm>
+#include <iostream>
 
-// Utility random number generator for small “jitter” (or angle deltas).
+////////////////////////////////////////////////////////////
+// Utility random number generator
+////////////////////////////////////////////////////////////
 float randomDelta(float minDelta, float maxDelta)
 {
     static std::random_device rd;
@@ -11,106 +15,262 @@ float randomDelta(float minDelta, float maxDelta)
     return dist(gen);
 }
 
+////////////////////////////////////////////////////////////
+// Quick geometry helper: Vector angle, line intersection, etc.
+////////////////////////////////////////////////////////////
+sf::Vector2f normalize(const sf::Vector2f &v)
+{
+    float len = std::sqrt(v.x * v.x + v.y * v.y);
+    if (len < 1e-6f)
+        return sf::Vector2f(0.f, 0.f);
+    return sf::Vector2f(v.x / len, v.y / len);
+}
+
+// Returns angle in radians between two vectors
+float angleBetween(const sf::Vector2f &v1, const sf::Vector2f &v2)
+{
+    // dot(a,b) = |a||b| cos(theta)
+    // => theta = arccos( dot(a,b) / (|a||b|) )
+    float dot = v1.x * v2.x + v1.y * v2.y;
+    float len1 = std::sqrt(v1.x * v1.x + v1.y * v1.y);
+    float len2 = std::sqrt(v2.x * v2.x + v2.y * v2.y);
+    if (len1 < 1e-6f || len2 < 1e-6f)
+        return 0.f;
+    float cosVal = dot / (len1 * len2);
+    cosVal = std::max(-1.f, std::min(1.f, cosVal)); // clamp
+    return std::acos(cosVal);
+}
+
+// Check line segment intersection using standard parametric approach
+bool linesIntersect(const sf::Vector2f &p1, const sf::Vector2f &p2,
+                    const sf::Vector2f &p3, const sf::Vector2f &p4)
+{
+    float denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+    if (std::fabs(denom) < 1e-9)
+    {
+        // Lines are (nearly) parallel
+        return false;
+    }
+
+    float t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
+    float u = ((p1.x - p3.x) * (p1.y - p2.y) - (p1.y - p3.y) * (p1.x - p2.x)) / denom;
+
+    // Intersection if t and u are both within [0,1]
+    return (t >= 0.f && t <= 1.f && u >= 0.f && u <= 1.f);
+}
+
+////////////////////////////////////////////////////////////
+// Bot class
+////////////////////////////////////////////////////////////
 class Bot
 {
 public:
-    Bot(float groundX, float groundY)
-        : m_footPos(groundX, groundY), // "foot" on the ground
-          m_bodyLength(120.f),         // total height from foot to "head"
-          m_shoulderOffset(40.f),      // how far below the top of the body the shoulder is
-          m_armAngle(0.f), m_elbowAngle(0.f), m_wristAngle(0.f),
-          m_armLength(100.f), m_forearmLength(80.f), m_handLength(50.f)
+    // If flipped=true => the arm initially faces left instead of right
+    Bot(float footX, float footY, bool flipped = false)
+        : m_footPos(footX, footY),
+          m_bodyLength(120.f),
+          m_shoulderOffset(40.f),
+          m_bodyAngle(0.f), // new angle for "poking" or leaning
+          m_armAngle(0.f),
+          m_elbowAngle(0.f),
+          m_wristAngle(0.f),
+          m_armLength(60.f),
+          m_forearmLength(70.f),
+          m_handLength(100.f),
+          m_isAlive(true),
+          m_flipped(flipped)
     {
-        // Set up joint circle shapes (just for visual representation).
+        // Circle for joints
         m_jointCircle.setRadius(5.f);
-        m_jointCircle.setOrigin(5.f, 5.f); // center the circle on its coordinate
+        m_jointCircle.setOrigin(5.f, 5.f);
         m_jointCircle.setFillColor(sf::Color::Red);
 
+        // "Head" circle
         m_head.setRadius(10.f);
-        m_head.setOrigin(10.f, 10.f); // center the circle on its coordinate
+        m_head.setOrigin(10.f, 10.f);
         m_head.setFillColor(sf::Color::Blue);
+
+        // If flipped, rotate the entire arm 180 degrees
+        if (m_flipped)
+        {
+            m_armAngle = 3.14159f; // ~180 degrees
+        }
     }
 
-    void update()
+    // Update with random foot jitter, body tilt, arm angles, etc.
+    void update(const sf::Vector2f &opponentFootPos)
     {
-        // Randomly “jitter” the foot horizontally
-        m_footPos.x += randomDelta(-8.f, 8.f);
-        //m_footPos.y = 400.f + 100.f * std::sin(m_footPos.x / 50.f);
-        // Jitter each joint angle slightly
-        m_armAngle += randomDelta(-0.01f, 0.01f);
-        m_elbowAngle += randomDelta(-0.01f, 0.01f);
-        m_wristAngle += randomDelta(-0.01f, 0.01f);
+        if (!m_isAlive)
+            return;
+
+        // Random foot movement
+        if (!m_flipped)
+            m_footPos.x += randomDelta(0.f, 2.f);
+        else
+            m_footPos.x += randomDelta(-2.f, 0.f);
+
+        // --- 1) Body "poking" angle ---
+        // Let bodyAngle vary a little to simulate leaning in/out
+        m_bodyAngle += randomDelta(-0.02f, 0.02f);
+        // If you want to clamp angle so they don't fold in half, e.g. [-1, +1] rad:
+        // m_bodyAngle = std::max(-1.f, std::min(m_bodyAngle, 1.f));
+
+        // --- 2) Arm angles ---
+        m_armAngle += randomDelta(-0.07f, 0.07f);
+        m_elbowAngle += randomDelta(-0.04f, 0.04f);
+
+        // Aiming logic for the wrist
+        float wAngleToOpponent = computeWristAimAngle(opponentFootPos);
+        float currentWristAngle = (m_armAngle + m_elbowAngle + m_wristAngle);
+        float diff = wAngleToOpponent - currentWristAngle;
+        // wrap diff into [-π, π]
+        if (diff > 3.14159f)
+            diff -= 6.28318f;
+        if (diff < -3.14159f)
+            diff += 6.28318f;
+        m_wristAngle += 0.1f * diff + randomDelta(-0.01f, 0.01f);
     }
 
+    void kill() { m_isAlive = false; }
+    bool isAlive() const { return m_isAlive; }
+
+    // Move the entire bot's foot (knockback)
+    void applyKnockback(const sf::Vector2f &displacement)
+    {
+        if (!m_isAlive)
+            return;
+        m_footPos += displacement;
+    }
+
+    // For collisions, we still treat the body line as foot->head
+    void getBodyLine(sf::Vector2f &outStart, sf::Vector2f &outEnd) const
+    {
+        sf::Vector2f headPos = getHeadPos();
+        outStart = m_footPos;
+        outEnd = headPos;
+    }
+
+    // The sword line is wrist->swordTip
+    void getSwordLine(sf::Vector2f &outStart, sf::Vector2f &outEnd) const
+    {
+        sf::Vector2f elbowPos = getElbowPos(getShoulderPos());
+        sf::Vector2f wristPos = getWristPos(elbowPos);
+        sf::Vector2f swordTip = getSwordTip(wristPos);
+        outStart = wristPos;
+        outEnd = swordTip;
+    }
+
+    // Return angle between sword direction and the body direction
+    float getSwordBodyAngle() const
+    {
+        sf::Vector2f bodyVec = getHeadPos() - m_footPos;
+        sf::Vector2f swordStart, swordEnd;
+        getSwordLine(swordStart, swordEnd);
+        sf::Vector2f swordVec = swordEnd - swordStart;
+        return angleBetween(bodyVec, swordVec);
+    }
+
+    // Draw the bot
     void draw(sf::RenderWindow &window)
     {
-        // ----------------------------------------------------------
-        // 1) Compute the vertical body: Foot -> Head
-        // ----------------------------------------------------------
-        // The top of the body ("head") is bodyLength above the foot
-        sf::Vector2f headPos = m_footPos - sf::Vector2f(0.f, m_bodyLength);
+        if (!m_isAlive)
+            return;
 
-        // Draw the full body as a green line from foot to head
+        // Get the key points
+        sf::Vector2f headPos = getHeadPos();
+        sf::Vector2f shoulderPos = getShoulderPos();
+        sf::Vector2f elbowPos = getElbowPos(shoulderPos);
+        sf::Vector2f wristPos = getWristPos(elbowPos);
+        sf::Vector2f swordTip = getSwordTip(wristPos);
+
+        // Draw the body line foot->head
         drawLine(window, m_footPos, headPos, sf::Color::Green);
 
-        // ----------------------------------------------------------
-        // 2) Compute the shoulder, slightly below the top (“head”)
-        // ----------------------------------------------------------
-        // The shoulder is “shoulderOffset” below the head
-        sf::Vector2f shoulderPos = headPos + sf::Vector2f(0.f, m_shoulderOffset);
-
-        // ----------------------------------------------------------
-        // 3) Compute & draw the arm from the shoulder
-        // ----------------------------------------------------------
-        sf::Vector2f elbowPos;
-        elbowPos.x = shoulderPos.x + m_armLength * std::cos(m_armAngle);
-        elbowPos.y = shoulderPos.y + m_armLength * std::sin(m_armAngle);
-
-        float elbowGlobalAngle = m_armAngle + m_elbowAngle;
-        sf::Vector2f wristPos;
-        wristPos.x = elbowPos.x + m_forearmLength * std::cos(elbowGlobalAngle);
-        wristPos.y = elbowPos.y + m_forearmLength * std::sin(elbowGlobalAngle);
-
-        float wristGlobalAngle = elbowGlobalAngle + m_wristAngle;
-        sf::Vector2f handEnd;
-        handEnd.x = wristPos.x + m_handLength * std::cos(wristGlobalAngle);
-        handEnd.y = wristPos.y + m_handLength * std::sin(wristGlobalAngle);
-
-        // Lines for the arm & “sword”
+        // Arm lines
         drawLine(window, shoulderPos, elbowPos, sf::Color::White);
         drawLine(window, elbowPos, wristPos, sf::Color::White);
-        drawLine(window, wristPos, handEnd, sf::Color::Yellow);
+        drawLine(window, wristPos, swordTip, sf::Color::Yellow);
 
-        // ----------------------------------------------------------
-        // 4) Draw the circles at important joints
-        // ----------------------------------------------------------
-        // Foot
+        // Circles for foot, head, shoulder, elbow, wrist
         m_jointCircle.setPosition(m_footPos);
         window.draw(m_jointCircle);
 
-        // Head
         m_head.setPosition(headPos);
         window.draw(m_head);
 
-        // Shoulder
         m_jointCircle.setPosition(shoulderPos);
         window.draw(m_jointCircle);
 
-        // Elbow
         m_jointCircle.setPosition(elbowPos);
         window.draw(m_jointCircle);
 
-        // Wrist
         m_jointCircle.setPosition(wristPos);
         window.draw(m_jointCircle);
-
-        // Optional: tip of the “sword”
-        // m_jointCircle.setPosition(handEnd);
-        // window.draw(m_jointCircle);
     }
 
+    sf::Vector2f getFootPos() const { return m_footPos; }
+
 private:
-    // Helper to draw a single line segment in SFML
+    // Compute where the head is, given that the body can tilt by m_bodyAngle.
+    // We define angle=0 => straight up. Positive angle => leaning one way, negative => the other.
+    sf::Vector2f getHeadPos() const
+    {
+        // If angle=0 => head is exactly 120.f above foot on y-axis
+        // We'll interpret m_bodyAngle so that it rotates around the foot:
+        //   x offset = bodyLength * sin(angle)
+        //   y offset = -bodyLength * cos(angle)  (minus because angle=0 means upward)
+        float dx = m_bodyLength * std::sin(m_bodyAngle);
+        float dy = -m_bodyLength * std::cos(m_bodyAngle);
+        return sf::Vector2f(m_footPos.x + dx, m_footPos.y + dy);
+    }
+
+    // The shoulder is "shoulderOffset" below the top (the head), along the line from head->foot
+    sf::Vector2f getShoulderPos() const
+    {
+        sf::Vector2f headPos = getHeadPos();
+        // direction from head -> foot
+        sf::Vector2f footDir = m_footPos - headPos;
+        float len = std::sqrt(footDir.x * footDir.x + footDir.y * footDir.y);
+        if (len < 1e-6f)
+            return headPos; // degenerate
+
+        sf::Vector2f unitDir = sf::Vector2f(footDir.x / len, footDir.y / len);
+        // offset from head downward
+        return headPos + unitDir * m_shoulderOffset;
+    }
+
+    sf::Vector2f getElbowPos(const sf::Vector2f &shoulderPos) const
+    {
+        return sf::Vector2f(shoulderPos.x + m_armLength * std::cos(m_armAngle),
+                            shoulderPos.y + m_armLength * std::sin(m_armAngle));
+    }
+
+    sf::Vector2f getWristPos(const sf::Vector2f &elbowPos) const
+    {
+        float elbowGlobalAngle = m_armAngle + m_elbowAngle;
+        return sf::Vector2f(elbowPos.x + m_forearmLength * std::cos(elbowGlobalAngle),
+                            elbowPos.y + m_forearmLength * std::sin(elbowGlobalAngle));
+    }
+
+    sf::Vector2f getSwordTip(const sf::Vector2f &wristPos) const
+    {
+        float wristGlobalAngle = m_armAngle + m_elbowAngle + m_wristAngle;
+        return sf::Vector2f(wristPos.x + m_handLength * std::cos(wristGlobalAngle),
+                            wristPos.y + m_handLength * std::sin(wristGlobalAngle));
+    }
+
+    // A helper to guess the angle from the wrist to the opponent's foot
+    float computeWristAimAngle(const sf::Vector2f &opponentFootPos)
+    {
+        sf::Vector2f shoulderPos = getShoulderPos();
+        sf::Vector2f elbowPos = getElbowPos(shoulderPos);
+        sf::Vector2f wristPos = getWristPos(elbowPos);
+
+        sf::Vector2f dir = opponentFootPos - wristPos;
+        return std::atan2(dir.y, dir.x);
+    }
+
+    // Just draws a line using a VertexArray
     void drawLine(sf::RenderWindow &window,
                   const sf::Vector2f &start,
                   const sf::Vector2f &end,
@@ -125,39 +285,111 @@ private:
     }
 
 private:
-    // “Foot” position on the ground (jittered each frame)
-    sf::Vector2f m_footPos;
-
-    // Total vertical height from foot to head
-    float m_bodyLength;
-    // Shoulder is some pixels below the very top (“head”)
+    // Basic properties
+    sf::Vector2f m_footPos; // foot location
+    float m_bodyLength;     // total length from foot to head
     float m_shoulderOffset;
-
-    // Arm joint angles
+    float m_bodyAngle; // new angle for "poking" (0=vertical, +/- tilt)
     float m_armAngle;
     float m_elbowAngle;
     float m_wristAngle;
-
-    // Limb lengths
     float m_armLength;
     float m_forearmLength;
     float m_handLength;
 
-    // Circles for drawing joints
+    bool m_isAlive;
+    bool m_flipped;
+
+    // Visuals
     sf::CircleShape m_jointCircle;
     sf::CircleShape m_head;
 };
 
+////////////////////////////////////////////////////////////
+// Collision/knockback logic
+////////////////////////////////////////////////////////////
+
+// Sword vs. Sword => knockback
+void checkSwordSwordCollision(Bot &A, Bot &B)
+{
+    if (!A.isAlive() || !B.isAlive())
+        return;
+
+    // Get each sword's line
+    sf::Vector2f aSwordStart, aSwordEnd;
+    A.getSwordLine(aSwordStart, aSwordEnd);
+    sf::Vector2f bSwordStart, bSwordEnd;
+    B.getSwordLine(bSwordStart, bSwordEnd);
+
+    if (linesIntersect(aSwordStart, aSwordEnd, bSwordStart, bSwordEnd))
+    {
+        // Swords have clashed. Compute angles:
+        float angleA = A.getSwordBodyAngle(); // 0=parallel, ~1.57=perp
+        float angleB = B.getSwordBodyAngle();
+
+        float forceA = std::fabs(std::sin(angleA));
+        float forceB = std::fabs(std::sin(angleB));
+
+        float knockbackScale = 20.f; // tweak as desired
+
+        // Push each bot away from the other
+        sf::Vector2f dirAB = B.getFootPos() - A.getFootPos();
+        sf::Vector2f normAB = normalize(dirAB);
+        sf::Vector2f normBA = -normAB; // opposite direction
+
+        B.applyKnockback(normAB * (forceA * knockbackScale));
+        A.applyKnockback(normBA * (forceB * knockbackScale));
+    }
+}
+
+// Sword vs. Body => kill
+void checkSwordHitsBody(Bot &attacker, Bot &victim)
+{
+    if (!attacker.isAlive() || !victim.isAlive())
+        return;
+
+    // Attacker's sword
+    sf::Vector2f swordStart, swordEnd;
+    attacker.getSwordLine(swordStart, swordEnd);
+
+    // Victim's body line
+    sf::Vector2f bodyStart, bodyEnd;
+    victim.getBodyLine(bodyStart, bodyEnd);
+
+    if (linesIntersect(swordStart, swordEnd, bodyStart, bodyEnd))
+    {
+        victim.kill();
+    }
+}
+
+// Combined check for collisions between two bots
+void handleCollisions(Bot &A, Bot &B)
+{
+    checkSwordSwordCollision(A, B);
+    checkSwordHitsBody(A, B);
+    checkSwordHitsBody(B, A);
+}
+
+////////////////////////////////////////////////////////////
+// Main
+////////////////////////////////////////////////////////////
 int main()
 {
-    sf::RenderWindow window(sf::VideoMode(800, 600), "2D Bot with Body & Offset Shoulder");
+    sf::RenderWindow window(sf::VideoMode(800, 600),
+                            "Leaning/Poking Bots + Walls + Collisions");
     window.setFramerateLimit(60);
 
-    // Start the bot around the middle of the screen
-    Bot bot(400.f, 400.f);
+    // Two bots, left (not flipped) vs. right (flipped)
+    Bot botA(250.f, 400.f, false);
+    Bot botB(550.f, 400.f, true);
+
+    // Example "walls"
+    float leftWallX = 50.f;
+    float rightWallX = 750.f;
 
     while (window.isOpen())
     {
+        // Poll events
         sf::Event event;
         while (window.pollEvent(event))
         {
@@ -165,12 +397,51 @@ int main()
                 window.close();
         }
 
-        // Update bot logic
-        bot.update();
+        // Update bots if they're alive
+        if (botA.isAlive())
+            botA.update(botB.getFootPos());
+        if (botB.isAlive())
+            botB.update(botA.getFootPos());
 
-        // Draw everything
+        // Check collisions between the two bots
+        handleCollisions(botA, botB);
+
+        // **Check for walls** => kill if foot crosses the boundary
+        if (botA.isAlive())
+        {
+            float xA = botA.getFootPos().x;
+            if (xA < leftWallX || xA > rightWallX)
+                botA.kill();
+        }
+        if (botB.isAlive())
+        {
+            float xB = botB.getFootPos().x;
+            if (xB < leftWallX || xB > rightWallX)
+                botB.kill();
+        }
+
+        // Draw
         window.clear(sf::Color(50, 50, 50));
-        bot.draw(window);
+        botA.draw(window);
+        botB.draw(window);
+
+        // Draw the walls (optional)
+        // left wall
+        sf::VertexArray lw(sf::Lines, 2);
+        lw[0].position = sf::Vector2f(leftWallX, 0.f);
+        lw[0].color = sf::Color::Magenta;
+        lw[1].position = sf::Vector2f(leftWallX, 600.f);
+        lw[1].color = sf::Color::Magenta;
+        window.draw(lw);
+
+        // right wall
+        sf::VertexArray rw(sf::Lines, 2);
+        rw[0].position = sf::Vector2f(rightWallX, 0.f);
+        rw[0].color = sf::Color::Magenta;
+        rw[1].position = sf::Vector2f(rightWallX, 600.f);
+        rw[1].color = sf::Color::Magenta;
+        window.draw(rw);
+
         window.display();
     }
 
