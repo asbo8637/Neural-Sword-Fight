@@ -573,15 +573,15 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float forceSinB = std::fabs(std::cos(angleB));
 
         int collisions = A.getCollisionAmount();
-        float knockbackScale = collisions*1.f;
+        float knockbackScale = collisions*0.08f;
         float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
         float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
         float bAom = B.getAngleMomentum();
         // float forceB = -( knockbackScale) * (std::abs(aMom) + std::abs(aAom));
         // float forceA = ( knockbackScale) * (0.05*std::abs(bMom) + std::abs(bAom));
-        float forceB = -forceSinB*( knockbackScale) * std::abs(aAom)*std::abs(aAom);
-        float forceA = forceSinA*( knockbackScale) * std::abs(bAom)*std::abs(bAom);
+        float forceB = -forceSinB*( knockbackScale) * std::abs(bAom)*std::abs(bAom)*std::abs(bMom);
+        float forceA = forceSinA*( knockbackScale) * std::abs(aAom)*std::abs(aAom)*std::abs(aMom);
         B.applyKnockback(forceB);
         A.applyKnockback(forceA);
         if(forceA != 0 || forceB !=0) A.incrementCollisionAmount();
@@ -685,7 +685,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
         else{
             timer=1000;
             botA = Bot(150.f, 400.f, 90.f, false);
-            botB = Bot(650.f, 400.f, 90.f, true);
+            botB = Bot(650.f, 400.f, 100.f, true);
             rounds+=1;
             std::cout << "B WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
@@ -726,7 +726,6 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
 
         // Check collisions
         handleCollisions(botA, botB);
-
         // Kill if they cross walls
         if (botA.isAlive())
         {
@@ -778,9 +777,9 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
 
 int main()
 {
-    std::vector<uint> topology = {11, 100, 100, 5};
-    Scalar evolutionRate = 0.2;
-    Scalar mutationRate = 0.5;
+    std::vector<uint> topology = {11, 150, 150, 5};
+    Scalar evolutionRate = 0.1;
+    Scalar mutationRate = 0.3;
     neural net1(topology, evolutionRate, mutationRate);
     neural net2(topology, evolutionRate, mutationRate);
     neural net3(topology, evolutionRate, mutationRate);
