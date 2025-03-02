@@ -566,15 +566,15 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float forceB = std::fabs(std::cos(angleB));
 
         int collisions = A.getCollisionAmount();
-        float knockbackScale = collisions*0.001f;
+        float knockbackScale = collisions*0.0004f;
         float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
         float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
         float bAom = B.getAngleMomentum();
         //B.applyKnockback(-std::max(collisions*4.f, (forceA * knockbackScale) * aMom * aMom * aAom));
         //A.applyKnockback(std::max(collisions*4.f, (forceB * knockbackScale) * bMom * bMom * bAom));
-        B.applyKnockback(-(forceA * knockbackScale) * aMom);
-        A.applyKnockback((forceB * knockbackScale) * bMom);
+        B.applyKnockback(-std::max(static_cast<float>(collisions), (forceA * knockbackScale) * aMom * aMom));
+        A.applyKnockback(std::max(static_cast<float>(collisions), forceB * knockbackScale) * bMom * bMom);
     }
 }
 
@@ -639,9 +639,9 @@ int main()
     sf::RenderWindow window(sf::VideoMode(1000, 800), "NN Control Example");
     window.setFramerateLimit(200);
 
-    std::vector<uint> topology = {11, 100, 100, 5};
+    std::vector<uint> topology = {11, 200, 200, 5};
     Scalar evolutionRate = 0.1;
-    Scalar mutationRate = 0.5;
+    Scalar mutationRate = 0.25;
     neural net1(topology, evolutionRate, mutationRate);
     neural net2(topology, evolutionRate, mutationRate);
 
