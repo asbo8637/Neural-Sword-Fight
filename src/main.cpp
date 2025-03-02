@@ -241,7 +241,7 @@ public:
         return m_collision_amount;
     }
     void incrementCollisionAmount() {
-        m_collision_amount++;
+        m_collision_amount+=0.2f;
     }
     
     std::array<float, 6> getEnemyValues() const {
@@ -573,7 +573,7 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float forceSinB = std::fabs(std::cos(angleB));
 
         int collisions = A.getCollisionAmount();
-        float knockbackScale = collisions*0.08f;
+        float knockbackScale = collisions*0.24f;
         float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
         float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
@@ -649,7 +649,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
     int lastLoss=0; 
     int consecutiveRounds=0;
     sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
-    window.setFramerateLimit(100);
+    window.setFramerateLimit(300);
 
     // Create two bots
     Bot botA(150.f, 400.f, 80.f, false);
@@ -689,7 +689,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
             rounds+=1;
             std::cout << "B WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
-            if(lastLoss!=1 || consecutiveRounds>30){
+            if(lastLoss!=1 || consecutiveRounds>20){
                 if( switch_bot ) net1=net2.clone();
                 lastLoss=1;
                 consecutiveRounds=0;
@@ -714,7 +714,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
             rounds+=1;
             std::cout << "A WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
-            if(lastLoss!=2 || consecutiveRounds>30){
+            if(lastLoss!=2 || consecutiveRounds>20){
                 if( switch_bot ) net2 = net1.clone();
                 lastLoss=2;
                 consecutiveRounds = 0;
