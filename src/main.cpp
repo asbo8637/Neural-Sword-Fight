@@ -632,7 +632,7 @@ Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB){
 int main()
 {
     srand(static_cast<unsigned int>(time(0)));
-    int afterRounds=2000;
+    int afterRounds=5000;
     int timer = 500;
     int rounds=0;
     int lastLoss=0; 
@@ -657,11 +657,12 @@ int main()
     while (window.isOpen())
     {
         if(timer<0){
-            timer=500;
+            timer=1000;
             botA = Bot(150.f, 400.f, 90.f, false);
             botB = Bot(650.f, 400.f, 92.f, true);
             net1.updateWeights();
             net2.updateWeights();
+            std::cout << "TIMER RUNG! Round: " << rounds << std::endl;
         }
         timer--;
 
@@ -676,10 +677,11 @@ int main()
             botA.updateFromNN(controlsA);
         }
         else{
+            timer=1000;
             botA = Bot(150.f, 400.f, 90.f, false);
             botB = Bot(650.f, 400.f, 92.f, true);
             rounds+=1;
-            std::cout << "Bot B wins, round: " << rounds << std::endl;
+            std::cout << "B WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
             if(lastLoss!=1 || consecutiveRounds>30){
                 net1=net2.clone();
@@ -700,10 +702,11 @@ int main()
             botB.updateFromNN(controlsB);
         }
         else{
+            timer=1000;
             botA = Bot(150.f, 400.f, 90.f, false);
             botB = Bot(650.f, 400.f, 92.f, true);
             rounds+=1;
-            std::cout << "Bot A wins, round: " << rounds << std::endl;
+            std::cout << "A WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
             if(lastLoss!=2 || consecutiveRounds>30){
                 net2 = net1.clone();
