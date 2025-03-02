@@ -118,7 +118,7 @@ public:
         float direction = m_flipped ? 1.0f : -1.0f;
         
         // 1) Update foot x position.
-        m_footPos.x -= 3.0f * direction * controls[4];
+        m_footPos.x += 3.0f * direction * std::min(-0.1f, controls[4]);
         
         float Pi = 3.14159f;
         
@@ -150,7 +150,7 @@ public:
         float m_angle_momentum = std::max(1.f,(m_armAngle-last_arm_angle) + 
         (m_elbowAngle-last_elbow_angle) + 
         (m_wristAngle-last_wrist_angle) + 
-        (m_bodyAngle-last_body_angle)-2);
+        (m_bodyAngle-last_body_angle));
     }
 
     void kill() { m_isAlive = false; }
@@ -568,7 +568,7 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float forceB = std::fabs(std::cos(angleB));
 
         int collisions = A.getCollisionAmount();
-        float knockbackScale = collisions*0.0015f;
+        float knockbackScale = collisions*0.5f;
         float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
         float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
@@ -635,22 +635,15 @@ Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB){
 ////////////////////////////////////////////////////////////
 // Main
 ////////////////////////////////////////////////////////////
-int main()
-{
-    srand(static_cast<unsigned int>(time(0)));
-    int afterRounds=2500;
+neural learn(bool switch_bot, neural net1, neural net2, int round_count){
+    int afterRounds=round_count;
+    int endRounds=round_count+=50;
     int timer = 500;
     int rounds=0;
     int lastLoss=0; 
     int consecutiveRounds=0;
     sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
-    window.setFramerateLimit(200);
-
-    std::vector<uint> topology = {11, 100, 100, 5};
-    Scalar evolutionRate = 0.1;
-    Scalar mutationRate = 0.25;
-    neural net1(topology, evolutionRate, mutationRate);
-    neural net2(topology, evolutionRate, mutationRate);
+    window.setFramerateLimit(100);
 
     // Create two bots
     Bot botA(150.f, 400.f, 80.f, false);
@@ -660,12 +653,13 @@ int main()
     float leftWallX = 100.f;
     float rightWallX = 700.f;
 
-    while (window.isOpen())
+
+    while (window.isOpen() && rounds<endRounds)
     {
         if(timer<0){
             timer=1000;
             botA = Bot(150.f, 400.f, 90.f, false);
-            botB = Bot(650.f, 400.f, 92.f, true);
+            botB = Bot(650.f, 400.f, 90.f, true);
             net1.updateWeights();
             net2.updateWeights();
             std::cout << "TIMER RUNG! Round: " << rounds << std::endl;
@@ -685,12 +679,12 @@ int main()
         else{
             timer=1000;
             botA = Bot(150.f, 400.f, 90.f, false);
-            botB = Bot(650.f, 400.f, 92.f, true);
+            botB = Bot(650.f, 400.f, 93.f, true);
             rounds+=1;
             std::cout << "B WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
             if(lastLoss!=1 || consecutiveRounds>30){
-                net1=net2.clone();
+                if( switch_bot ) net1=net2.clone();
                 lastLoss=1;
                 consecutiveRounds=0;
             }
@@ -709,19 +703,20 @@ int main()
         }
         else{
             timer=1000;
-            botA = Bot(150.f, 400.f, 90.f, false);
-            botB = Bot(650.f, 400.f, 92.f, true);
+            botA = Bot(150.f, 400.f, 93.f, false);
+            botB = Bot(650.f, 400.f, 90.f, true);
             rounds+=1;
             std::cout << "A WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
             if(lastLoss!=2 || consecutiveRounds>30){
-                net2 = net1.clone();
+                if( switch_bot ) net2 = net1.clone();
                 lastLoss=2;
                 consecutiveRounds = 0;
             }
             net2.updateWeights();
             continue;
         }
+
 
         // Check collisions
         handleCollisions(botA, botB);
@@ -771,6 +766,23 @@ int main()
             }
         }
     }
+    return net1;
+}
 
+
+int main()
+{
+    std::vector<uint> topology = {11, 150, 150, 5};
+    Scalar evolutionRate = 0.1;
+    Scalar mutationRate = 0.4;
+    neural net1(topology, evolutionRate, mutationRate);
+    neural net2(topology, evolutionRate, mutationRate);
+    neural net3(topology, evolutionRate, mutationRate);
+    neural net4(topology, evolutionRate, mutationRate);
+
+    srand(static_cast<unsigned int>(time(0)));
+    neural champ1 = learn(true, net1, net2, 500);
+    neural champ2 = learn(true, net3, net4, 500);
+    neural champ3 = learn(false, champ1, champ2, 500);
     return 0;
 }
