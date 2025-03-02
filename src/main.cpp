@@ -539,12 +539,12 @@ int main()
 {
     int afterRounds=0;
     int rounds=0;
-    int lastWin=0; 
+    int lastLoss=0; 
     sf::RenderWindow window(sf::VideoMode(800, 600), "NN Control Example");
     window.setFramerateLimit(100);
 
     std::vector<uint> topology = {11, 100, 100, 4};
-    Scalar evolutionRate = 0.1;
+    Scalar evolutionRate = 1;
     Scalar mutationRate = 0.5;
     neural net1(topology, evolutionRate, mutationRate);
     neural net2(topology, evolutionRate, mutationRate);
@@ -586,7 +586,11 @@ int main()
             botB = Bot(650.f, 400.f, true);
             rounds+=1;
             std::cout << "Bot B wins, round: " << rounds << std::endl;
-            net1=net2;
+            if(lastLoss!=1){
+                net1=net2;
+            }
+            net1.updateWeights();
+            net1.updateWeights();
             net1.updateWeights();
             continue;
         }
@@ -606,6 +610,8 @@ int main()
             rounds+=1;
             std::cout << "Bot A wins, round: " << rounds << std::endl;
             net2=net1;
+            net2.updateWeights();
+            net2.updateWeights();
             net2.updateWeights();
             continue;
         }
