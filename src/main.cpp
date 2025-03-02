@@ -203,7 +203,7 @@ public:
         return angleBetween(bodyVec, swordVec);
     }
 
-    std::array<float, 5> getAllyValues() const {
+    std::array<float, 8> getAllyValues() const {
         // Adjust the foot x position if m_flipped.
         float footX = m_footPos.x;
         float temp_bodyAngle = m_bodyAngle;
@@ -234,49 +234,47 @@ public:
         float normWristAngle = normalizeAngle(temp_wristAngle);
         
         // Return ally values as [normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle]
-        return { normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle };
+        return { normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle, m_momentum.x, m_momentum.y, static_cast<float>(m_collision_amount) };
     }
     
     int getCollisionAmount() const {
         return m_collision_amount;
     }
     void incrementCollisionAmount() {
-        m_collision_amount+=0.2f;
+        m_collision_amount+=1.f;
     }
     
-    std::array<float, 6> getEnemyValues() const {
-        sf::Vector2f swordStart, swordEnd;
-        getSwordLine(swordStart, swordEnd);
-    
-        // For enemy values, if m_flipped is false then flip the x values.
+    std::array<float, 7> getEnemyValues() const {
         float footX = m_footPos.x;
-        float swordStartX = swordStart.x;
-        float swordEndX = swordEnd.x;
-        if (!m_flipped) {
+        float temp_bodyAngle = m_bodyAngle;
+        float temp_armAngle = m_armAngle;
+        float temp_elbowAngle = m_elbowAngle;
+        float temp_wristAngle = m_wristAngle;
+        if (m_flipped) {
             footX = 800 - footX;
-            swordStartX = 800 - swordStartX;
-            swordEndX = 800 - swordEndX;
+            float pi = 3.14159f;
+            temp_bodyAngle = - m_bodyAngle;
+            temp_armAngle = - m_armAngle;
+            temp_elbowAngle =  - m_elbowAngle;
+            temp_wristAngle = - m_wristAngle;
         }
         // Normalize x values from [100,700] to [0,1]
         float normFootX = (footX - 100.0f) / 600.0f;
-        float normSwordStartX = (swordStartX - 100.0f) / 600.0f;
-        float normSwordEndX   = (swordEndX - 100.0f) / 600.0f;
-    
-        // Normalize the y values from [300,600] to [0,1]
-        float normSwordStartY = (swordStart.y - 300.0f) / 300.0f;
-        float normSwordEndY   = (swordEnd.y   - 300.0f) / 300.0f;
-    
-        // Normalize the body angle as before.
-        float normBodyAngle;
-        {
-            float angle = m_bodyAngle;
+
+        auto normalizeAngle = [](float angle) -> float {
             if (angle < 0)
                 angle += 2.0f * 3.14159f;
-            normBodyAngle = angle / (2.0f * 3.14159f);
-        }
+            return angle / (2.0f * 3.14159f);
+        };
+
+        // Normalize the body angle as before.
+        float normBodyAngle  = normalizeAngle(temp_bodyAngle);
+        float normArmAngle   = normalizeAngle(temp_armAngle);
+        float normElbowAngle = normalizeAngle(temp_elbowAngle);
+        float normWristAngle = normalizeAngle(temp_wristAngle);
     
         // Return enemy values as [normFootX, normBodyAngle, normSwordStartX, normSwordStartY, normSwordEndX, normSwordEndY]
-        return { normFootX, normBodyAngle, normSwordStartX, normSwordStartY, normSwordEndX, normSwordEndY };
+        return { normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle,  m_momentum.x, m_momentum.y};
     }    
     
 
@@ -573,17 +571,18 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         float forceSinB = std::fabs(std::cos(angleB));
 
         int collisions = A.getCollisionAmount();
-        float knockbackScale = collisions*0.24f;
+        float knockbackScale = collisions*2.f;
         float aMom = std::sqrt(A.getMomentum().x * A.getMomentum().x + A.getMomentum().y * A.getMomentum().y); //euclidean distance
         float bMom = std::sqrt(B.getMomentum().x * B.getMomentum().x + B.getMomentum().y * B.getMomentum().y);
         float aAom = A.getAngleMomentum();
         float bAom = B.getAngleMomentum();
         // float forceB = -( knockbackScale) * (std::abs(aMom) + std::abs(aAom));
         // float forceA = ( knockbackScale) * (0.05*std::abs(bMom) + std::abs(bAom));
-        float forceB = -forceSinB*( knockbackScale) * std::abs(bAom)*std::abs(bAom)*std::abs(bMom);
-        float forceA = forceSinA*( knockbackScale) * std::abs(aAom)*std::abs(aAom)*std::abs(aMom);
+        float forceB = -forceSinB*( std::max(10.f,knockbackScale)) * std::abs(bAom)*std::abs(bMom);
+        float forceA = forceSinA*( std::max(10.f, knockbackScale)) * std::abs(aAom)*std::abs(aMom);
         B.applyKnockback(forceB);
         A.applyKnockback(forceA);
+        std::cout << bMom << " " << aAom <<  std::endl;
         if(forceA != 0 || forceB !=0) A.incrementCollisionAmount();
         // A.launch_sword();
         // B.launch_sword();
@@ -626,14 +625,14 @@ Eigen::RowVectorXf arrayToEigen(const std::array<float, N>& arr) {
 
 Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB){
     // For net1: combine botA's ally values with botB's enemy values.
-    auto botAAlly = botA.getAllyValues();   // std::array<float, 5>
-    auto botBEnemy = botB.getEnemyValues();   // std::array<float, 6>
+    auto botAAlly = botA.getAllyValues();   // std::array<float, 8>
+    auto botBEnemy = botB.getEnemyValues();   // std::array<float, 7>
 
     // Convert each array to an Eigen row vector.
     Eigen::RowVectorXf vecA = arrayToEigen(botAAlly);
     Eigen::RowVectorXf vecB = arrayToEigen(botBEnemy);
 
-    Eigen::RowVectorXf inputForNet(11);
+    Eigen::RowVectorXf inputForNet(15);
     inputForNet << vecA, vecB;  // Concatenates the two vectors
     return inputForNet;
 }
@@ -673,7 +672,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
         timer--;
 
         if (botA.isAlive() && timer> 0){
-            Eigen::RowVectorXf inputForNet1(11);
+            Eigen::RowVectorXf inputForNet1(15);
             inputForNet1 = getInputForBot(botA, botB);
             net1.propagateForward(inputForNet1);
             std::vector<Scalar> output = net1.getOutput();
@@ -689,7 +688,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
             rounds+=1;
             std::cout << "B WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
-            if(lastLoss!=1 || consecutiveRounds>20){
+            if(lastLoss!=1 || consecutiveRounds>25){
                 if( switch_bot ) net1=net2.clone();
                 lastLoss=1;
                 consecutiveRounds=0;
@@ -698,7 +697,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
             continue;
         }
         if (botB.isAlive()){
-            Eigen::RowVectorXf inputForNet2(11);
+            Eigen::RowVectorXf inputForNet2(15);
             inputForNet2 = getInputForBot(botB, botA);
             net2.propagateForward(inputForNet2);
             std::vector<Scalar> output = net2.getOutput();
@@ -714,7 +713,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
             rounds+=1;
             std::cout << "A WINS! Round: " << rounds << std::endl;
             consecutiveRounds+=1;
-            if(lastLoss!=2 || consecutiveRounds>20){
+            if(lastLoss!=2 || consecutiveRounds>25){
                 if( switch_bot ) net2 = net1.clone();
                 lastLoss=2;
                 consecutiveRounds = 0;
@@ -777,7 +776,7 @@ neural learn(bool switch_bot, neural net1, neural net2, int round_count){
 
 int main()
 {
-    std::vector<uint> topology = {11, 150, 150, 5};
+    std::vector<uint> topology = {15, 100, 100, 5};
     Scalar evolutionRate = 0.1;
     Scalar mutationRate = 0.3;
     neural net1(topology, evolutionRate, mutationRate);
@@ -786,7 +785,7 @@ int main()
     neural net4(topology, evolutionRate, mutationRate);
 
     srand(static_cast<unsigned int>(time(0)));
-    neural champ1 = learn(true, net1, net2, 1000);
+    neural champ1 = learn(true, net1, net2, 500);
     neural champ2 = learn(true, net3, net4, 2000);
     neural champ3 = learn(false, champ1, champ2, 250);
     return 0;
