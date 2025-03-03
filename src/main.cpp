@@ -156,34 +156,26 @@ public:
 
         // (2) For arm angle:
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
-        //m_armAngle = std::max(0.2f * Pi, std::min(0.6f * Pi, m_armAngle + controls[1] * m_speed));
-        m_armAngle += controls[1] * m_speed;
+        m_armAngle = std::max(-2.f * Pi, std::min(2.f * Pi, m_armAngle + controls[1] * m_speed));
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
 
         // (3) For elbow angle:
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
-        //m_elbowAngle = std::max(0.f * Pi, std::min(0.4f * Pi, m_elbowAngle + controls[2] * m_speed));
-        m_elbowAngle += controls[2] * m_speed;
+        m_elbowAngle = std::max(-2.f * Pi, std::min(2.f * Pi, m_elbowAngle + controls[2] * m_speed));
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
 
         // (4) For wrist angle:
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
-        //m_wristAngle = std::max(-0.4f * Pi, std::min(0.2f * Pi, m_wristAngle + controls[3] * m_speed));
+        m_wristAngle = std::max(-0.2f * Pi, std::min(0.2f * Pi, m_wristAngle + controls[3] * m_speed));
         m_wristAngle += controls[3] * m_speed;
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
 
-        m_bodyAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
-        m_bodyAngle  = std::max(-0.3f * Pi, std::min(0.3f * Pi, m_bodyAngle + controls[4] * m_speed));
-        m_bodyAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
+        m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
+        m_bodyAngle  = std::max(0.8f * Pi, std::min(1.2f * Pi, m_bodyAngle + controls[4] * m_speed));
+        m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
 
         sf::Vector2f newTip = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
         newTip = sf::Vector2f(newTip.x - m_footPos.x, newTip.y);
-        m_momentum += newTip - last_sword_pos;
-        m_angle_momentum = 100 *
-                            4 * std::abs(m_armAngle - last_arm_angle) +
-                           3 * std::abs(m_elbowAngle - last_elbow_angle) +
-                           std::abs(m_wristAngle - last_wrist_angle) +
-                           10 * std::abs(m_bodyAngle - last_body_angle);
     }
 
     void kill() { m_isAlive = false; }
@@ -651,8 +643,8 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
 
     if (linesIntersect(aSwordStart, aSwordEnd, bSwordStart, bSwordEnd))
     {
-        B.applyKnockback(-5);
-        A.applyKnockback(5);
+        B.applyKnockback(-9);
+        A.applyKnockback(9);
     }
 }
 
@@ -710,72 +702,83 @@ void drawWalls(sf::RenderWindow &window){
     sf::VertexArray horizontalLine(sf::Lines, 2);
     horizontalLine[0].position = sf::Vector2f(0.f, 400.f);
     horizontalLine[0].color = sf::Color::Magenta;
-    horizontalLine[1].position = sf::Vector2f(700.f, 400.f);
+    horizontalLine[1].position = sf::Vector2f(800.f, 400.f);
     horizontalLine[1].color = sf::Color::Magenta;
     window.draw(horizontalLine);
 
-    sf::VertexArray rw(sf::Lines, 2);
-    rw[0].position = sf::Vector2f(700, 0.f);
-    rw[0].color = sf::Color::Magenta;
-    rw[1].position = sf::Vector2f(700, 400.f);
-    rw[1].color = sf::Color::Magenta;
-    window.draw(rw);
+    // sf::VertexArray rw(sf::Lines, 2);
+    // rw[0].position = sf::Vector2f(700, 0.f);
+    // rw[0].color = sf::Color::Magenta;
+    // rw[1].position = sf::Vector2f(700, 400.f);
+    // rw[1].color = sf::Color::Magenta;
+    //window.draw(rw);
 }
 
 int one_round(neural net1, neural net2, Bot botA, Bot botB, int rounds, int endRounds, sf::RenderWindow &window){
-    float rightWallX = 700.f;
-    int timer = 800;
+    int timer = 500;
     std::vector<Scalar> output;
     std::array<float, 5> controlsA;
     std::array<float, 5> controlsB;
     while(timer>0){
         timer--;
-        if(!botA.isAlive() || !botB.isAlive()){
+        if(!botA.isAlive()){
+            std::cout << "B wins, Round: " << rounds << std::endl;
+            return 2;
+        }
+        if(!botB.isAlive()){
             std::cout << "A wins, Round: " << rounds << std::endl;
             return 1;
         }
         else{
-            //Update BotA. It moves first
-            Eigen::RowVectorXf inputForNet1 = getInputForBot(botA, botB, timer);
-            net1.propagateForward(inputForNet1);
-            output = net1.getOutput();
-            std::copy_n(output.begin(), 5, controlsA.begin());
-            botA.updateFromNN(controlsA);
-
-            //Update BotB. It moves second
+            //Get Input Output BotB.
             Eigen::RowVectorXf inputForNet2 = getInputForBot(botB, botA, timer);
             net2.propagateForward(inputForNet2);
             output = net2.getOutput();
             std::copy_n(output.begin(), 5, controlsB.begin());
+
+            //Get Input Output BotA.
+            Eigen::RowVectorXf inputForNet1 = getInputForBot(botA, botB, timer);
+            net1.propagateForward(inputForNet1);
+            output = net1.getOutput();
+            std::copy_n(output.begin(), 5, controlsA.begin());
+            
+            //Update Bots
             botB.updateFromNN(controlsB);
+            botA.updateFromNN(controlsA);
 
 
             //Deal with collisions and detect deaths: 
             handleCollisions(botA, botB);
 
-            // Kill if cross walls
+            //Kill if cross walls
             if (botA.isAlive() && botB.isAlive())
             {
-                float xA = botA.getFootPos().x;
-                if (xA > rightWallX)
-                    botA.kill();
                 float xB = botB.getFootPos().x;
-                if (xB > rightWallX)
-                    botB.kill();
+                if (xB > 800 || xB <0) botB.kill();
+                float xA = botA.getFootPos().x;
+                if (xA > 800 || xA <0) botA.kill();
             }
 
             // Draw
             if(rounds>endRounds){
-                std::cout<<"WhereDraw"<<std::endl;
                 window.clear(sf::Color(50, 50, 50));
                 botA.draw(window);
                 botB.draw(window);
                 drawWalls(window);
+                window.display();
+
+                // Poll events
+                sf::Event event;
+                while (window.pollEvent(event))
+                {
+                    if (event.type == sf::Event::Closed)
+                        window.close();
+                }
             }
         }
     }
-    std::cout << "B wins, Round: " << rounds << std::endl;
-    return 2;
+    std::cout << "Timer, Round: " << rounds << std::endl;
+    return 3;
 }
 
 
@@ -792,34 +795,41 @@ neural betterLearn(neural net1, neural net2, int display_round, float swordA, fl
     neural lastNet1=net1.clone();
     neural lastNet2=net2.clone();
     int winner=0;
-    int lastWinner=0;
+    int lastWinner=1;
 
-    while (rounds < display_round+1000)
+    while (rounds < display_round+1000000)
     {
         rounds++;
+        consecutiveRounds++;
         winner=one_round(net1, net2, botA, botB, rounds, display_round, window);
-        botA = Bot(150.f, 400.f, swordA, speedA, bodyA, false);
-        botB = Bot(650.f, 400.f, swordA, speedA, bodyA, true);
+        botA = Bot(300.f, 400.f, swordA, speedA, bodyA, false);
+        botB = Bot(500.f, 400.f, swordA, speedA, bodyA, true);
 
-        if(winner!=lastWinner){
+        if(winner!=3 && winner!=lastWinner){
             consecutiveRounds=0;
             lastNet1=net1.clone();
             lastNet2=net2.clone();
         }
-
         if(winner=1){
-            if(consecutiveRounds>20){
+            lastWinner=1;
+            if(consecutiveRounds>25){
                 net2=lastNet2.clone();
                 consecutiveRounds=0;
             }
             net2.updateWeights();
         }
-        else{
-            if(consecutiveRounds>20){
+        else if(winner=2){
+            lastWinner=2;
+            if(consecutiveRounds>25){
                 net1=lastNet1.clone();
                 consecutiveRounds=0;
             }
             net1.updateWeights();
+        }
+        else{
+            consecutiveRounds=0;
+            if(lastWinner==2) net1.updateWeights();
+            if(lastWinner==1) net2.updateWeights();
         }
     }
     return net1;
@@ -830,16 +840,16 @@ neural betterLearn(neural net1, neural net2, int display_round, float swordA, fl
 ////////////////////////////////////////////////////////////
 int main()
 {
-    std::vector<uint> topology = {15, 100, 100, 100, 5};
+    std::vector<uint> topology = {15, 250, 250, 5};
     Scalar evolutionRate = 0.1f;
-    Scalar mutationRate = 0.5f;
+    Scalar mutationRate = 0.3f;
 
     neural net1(topology, evolutionRate, mutationRate);
     neural net2(topology, evolutionRate, mutationRate);
     srand(static_cast<unsigned int>(time(0)));
 
     // Define 8 different sets of attributes.
-    betterLearn(net1, net2, 0, 50.f, 0.5f, 10.f);
+    betterLearn(net1, net2, 5000, 60.f, 0.2f, 120.f);
                                 
     return 0;
 }
