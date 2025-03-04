@@ -71,12 +71,19 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
     A.getSwordLine(aSwordStart, aSwordEnd);
     sf::Vector2f bSwordStart, bSwordEnd;
     B.getSwordLine(bSwordStart, bSwordEnd);
-    bSwordStart.x+=2.f;
+    bSwordStart.x+=1.f;
+    aSwordStart.x-=1.f;
 
     if (linesIntersect(aSwordStart, aSwordEnd, bSwordStart, bSwordEnd))
     {
-        B.applyKnockback(-9);
-        A.applyKnockback(9);
+        B.applyKnockback(-50);
+        A.applyKnockback(50);
+        if(A.get_m_momentum()>B.get_m_momentum()){
+            A.incrementScore();
+        }
+        else{
+            B.incrementScore();
+        }
     }
 }
 
@@ -118,14 +125,14 @@ Eigen::RowVectorXf arrayToEigen(const std::array<float, N> &arr)
 // Construct the 15-dimensional input for the net controlling botA, given botB as enemy
 Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB, float timer)
 {
-    timer/=1000;
-    auto botAAlly = botA.getAllyValues();   // std::array<float, 5>
+    timer/=500;
+    auto botAAlly = botA.getAllyValues();   // std::array<float, 6>
     auto botBEnemy = botB.getAllyValues();
 
     Eigen::RowVectorXf vecA = arrayToEigen(botAAlly);
     Eigen::RowVectorXf vecB = arrayToEigen(botBEnemy);
 
-    Eigen::RowVectorXf inputForNet(11);
+    Eigen::RowVectorXf inputForNet(13);
     inputForNet << vecA, vecB, timer;
     return inputForNet;
 }
@@ -146,11 +153,11 @@ void drawWalls(sf::RenderWindow &window){
     //window.draw(rw);
 }
 
-int one_round(neural net1, neural net2, Bot botA, Bot botB, int rounds, bool display, sf::RenderWindow &window){
-    int timer = 500;
+int one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool display, sf::RenderWindow &window){
+    int timer = 400;
     std::vector<Scalar> output;
-    std::array<float, 4> controlsA;
-    std::array<float, 4> controlsB;
+    std::array<float, 5> controlsA;
+    std::array<float, 5> controlsB;
     while(timer>0){
         timer--;
         if(!botA.isAlive()){
@@ -164,13 +171,13 @@ int one_round(neural net1, neural net2, Bot botA, Bot botB, int rounds, bool dis
             Eigen::RowVectorXf inputForNet2 = getInputForBot(botB, botA, timer);
             net2.propagateForward(inputForNet2);
             output = net2.getOutput();
-            std::copy_n(output.begin(), 4, controlsB.begin());
+            std::copy_n(output.begin(), 5, controlsB.begin());
 
             //Get Input Output BotA.
             Eigen::RowVectorXf inputForNet1 = getInputForBot(botA, botB, timer);
             net1.propagateForward(inputForNet1);
             output = net1.getOutput();
-            std::copy_n(output.begin(), 4, controlsA.begin());
+            std::copy_n(output.begin(), 5, controlsA.begin());
             
             //Update Bots
             botB.updateFromNN(controlsB);
@@ -210,64 +217,9 @@ int one_round(neural net1, neural net2, Bot botA, Bot botB, int rounds, bool dis
     return 3;
 }
 
-
-neural betterLearn(neural net1, neural net2, int display_round, float swordA, float speedA, float bodyA)
-{
-    sf::RenderWindow window(sf::VideoMode(800, 600), "Tournament Match");
-    window.setFramerateLimit(600);
-    int timer = 800;
-    int rounds = 0;
-    int lastLoss = 0;
-    int consecutiveRounds = 0;
-    Bot botA = Bot(150.f, 400.f, swordA, speedA, bodyA, false);
-    Bot botB = Bot(650.f, 400.f, swordA, speedA, bodyA, true);
-    neural lastNet1=net1.clone();
-    neural lastNet2=net2.clone();
-    int winner=0;
-    int lastWinner=1;
-
-    while (rounds < display_round+1000000)
-    {
-        rounds++;
-        consecutiveRounds++;
-        winner=one_round(net1, net2, botA, botB, rounds, display_round, window);
-        botA = Bot(250.f, 400.f, swordA, speedA, bodyA, false);
-        botB = Bot(550.f, 400.f, swordA, speedA, bodyA, true);
-
-        if(winner==3){
-            std::cout << "Draw. A score: " << botA.getScore() << " B score: " << botB.getScore() << std::endl;
-            winner = botA.getScore()>botB.getScore() ? 1 : 2;
-        }
-        if(winner!=lastWinner){
-            consecutiveRounds=0;
-            lastNet1=net1.clone();
-            lastNet2=net2.clone();
-        }
-        if(winner==1){
-            std::cout << "A wins, Round: " << rounds << std::endl;
-            lastWinner=1;
-            if(consecutiveRounds>5){
-                net2=lastNet2.clone();
-                consecutiveRounds=0;
-            }
-            net2.updateWeights();
-        }
-        else if(winner==2){
-            std::cout << "B wins, Round: " << rounds << std::endl;
-            lastWinner=2;
-            if(consecutiveRounds>5){
-                net1=lastNet1.clone();
-                consecutiveRounds=0;
-            }
-            net1.updateWeights();
-        }
-    }
-    return net1;
-}
-
 std::vector<neural> createInitialPopulation(int populationSize) {
     std::vector<neural> population;
-    std::vector<uint> topology = {11, 128, 128, 4};
+    std::vector<uint> topology = {13, 128, 128, 5};
     Scalar evolutionRate = 0.1f;
     Scalar mutationRate = 0.3f;
 
@@ -282,17 +234,16 @@ std::vector<neural> createInitialPopulation(int populationSize) {
 }
 
 
-neural generationLearn(neural net1, neural net2, float swordA, float speedA, float bodyA)
+void generationLearn(float swordA, float speedA, float bodyA)
 {
     sf::RenderWindow window(sf::VideoMode(800, 600), "Tournament Match");
     window.setFramerateLimit(600);
-    int timer = 800;
     int rounds = 0;
     Bot botA = Bot(150.f, 400.f, swordA, speedA, bodyA, false);
     Bot botB = Bot(650.f, 400.f, swordA, speedA, bodyA, true);
     int winner=0;
 
-    int popSize=100;
+    int popSize=124;
     std::vector<neural> population = createInitialPopulation(popSize);
     std::random_device rd;
     std::mt19937 rng(rd());
@@ -307,23 +258,21 @@ neural generationLearn(neural net1, neural net2, float swordA, float speedA, flo
             winner=one_round(population[i], population[i+1], botA, botB, rounds, i==0, window);
 
             if(winner==3){
-                if(i==0) std::cout << "Draw. A score: " << botA.getScore() << " B score: " << botB.getScore() << std::endl;
-                //winner = botA.getScore()>botB.getScore() ? 1 : 2;
-                winner=1;
+                if(i==0) std::cout << "DRAW! A score: " << botA.getScore() << " / B score: " << botB.getScore() << std::endl;
+                winner = botA.getScore()>=botB.getScore() ? 1 : 2;
             }
             if(winner==1){
-                if(i==0) std::cout << "A wins, Generation: " << rounds << std::endl;
+                if(i==0) std::cout << "A WINS! Generation: " << rounds << std::endl;
                 population[i+1]=population[i].clone();
                 population[i+1].updateWeights();
             }
             else if(winner==2){
-                if(i==0) std::cout << "B wins, Generation: " << rounds << std::endl;
+                if(i==0) std::cout << "B WINS! Generation: " << rounds << std::endl;
                 population[i]=population[i+1].clone();
                 population[i].updateWeights();
             }
         }
     }
-    return net1;
 }
 
 
@@ -331,16 +280,8 @@ neural generationLearn(neural net1, neural net2, float swordA, float speedA, flo
 
 int main()
 {
-    std::vector<uint> topology = {11, 128, 128, 5};
-    Scalar evolutionRate = 0.1f;
-    Scalar mutationRate = 0.3f;
-
-    neural net1(topology, evolutionRate, mutationRate);
-    neural net2(topology, evolutionRate, mutationRate);
     srand(static_cast<unsigned int>(time(0)));
-
-    // Define 8 different sets of attributes.
-    generationLearn(net1, net2, 60.f, 0.2f, 100.f);
+    generationLearn(60.f, 0.2f, 100.f);
                                 
     return 0;
 }

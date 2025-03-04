@@ -36,7 +36,9 @@ public:
           m_forearmLength(30.f),
           m_handLength(sword),
           m_isAlive(true),
-          m_flipped(flipped)
+          m_flipped(flipped),
+          m_momentum(0.f),
+          score(0)
     {
         // Circles for joints
         m_jointCircle.setRadius(2.f);
@@ -50,17 +52,12 @@ public:
 
     // New update method: we pass in 5 values (0..1)
     // [0] => foot X, [1] => armAngle, [2] => elbowAngle, [3] => wristAngle, [4] => ???
-    void updateFromNN(const std::array<float, 4> &controls)
+    void updateFromNN(const std::array<float, 5> &controls)
     {
-        sf::Vector2f last_sword_pos = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
-        last_sword_pos = sf::Vector2f(last_sword_pos.x - m_footPos.x, last_sword_pos.y);
-        float last_wrist_angle = m_wristAngle;
-        float last_elbow_angle = m_elbowAngle;
-        float last_arm_angle = m_armAngle;
-        float last_body_angle = m_bodyAngle;
         if (!m_isAlive)
             return;
-
+        
+        sf::Vector2f last_sword_tip = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
         // Define boundaries for the foot's x position.
         const float minX = 100.f;
         const float maxX = 700.f;
@@ -69,18 +66,18 @@ public:
         float direction = m_flipped ? 1.0f : -1.0f;
 
         // (1) Move footX
-        m_footPos.x += 1.3f * direction * controls[0];
+        m_footPos.x -= 1.3f * direction * (controls[0]);
 
         float Pi = 3.14159f;
 
         // (2) For arm angle:
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
-        m_armAngle = std::max(-2.f * Pi, std::min(2.f * Pi, m_armAngle + controls[1] * m_speed));
+        m_armAngle = std::max(-2.5f * Pi, std::min(1.5f * Pi, m_armAngle + 0.4f*controls[1] * m_speed));
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
 
         // (3) For elbow angle:
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
-        m_elbowAngle = std::max(-2.f * Pi, std::min(2.f * Pi, m_elbowAngle + controls[2] * m_speed));
+        m_elbowAngle = std::max(-2.f * Pi, std::min(2.f * Pi, m_elbowAngle + 0.9f * controls[2] * m_speed));
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
 
         // (4) For wrist angle:
@@ -88,14 +85,18 @@ public:
         m_wristAngle = std::max(-0.2f * Pi, std::min(0.2f * Pi, m_wristAngle + controls[3] * m_speed));
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
 
-        // m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
-        // m_bodyAngle  = std::max(0.8f * Pi, std::min(1.2f * Pi, 0.5f*m_bodyAngle + controls[4] * m_speed));
-        // m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
+        // (5) For body angle:
+        m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
+        m_bodyAngle = std::max(0.8f * Pi, std::min(1.2f * Pi, m_bodyAngle + controls[4] * m_speed));
+        m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
 
-        sf::Vector2f newTip = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
-        newTip = sf::Vector2f(newTip.x - m_footPos.x, newTip.y);
-
-        score+=std::pow(last_sword_pos.x-newTip.x, 2);
+        float last_momentum=m_momentum;
+        sf::Vector2f current_sword_tip = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
+        m_momentum += (current_sword_tip.y - last_sword_tip.y);
+        if(std::abs(last_momentum)>std::abs(m_momentum)){
+            m_momentum=0;
+        }
+        m_momentum*=0.9f;
     }
 
     void kill() { m_isAlive = false; }
@@ -103,6 +104,8 @@ public:
     sf::Vector2f getFootPos() const { return m_footPos; }
 
     int getScore() const {return score;}
+    void incrementScore() {score++;}
+    float get_m_momentum() const {return std::abs(m_momentum);}
 
     // Knockback
     void applyKnockback(float disp)
@@ -135,7 +138,7 @@ public:
         return angleBetween(swordEnd, swordStart);
     }
 
-    std::array<float, 5> getAllyValues() const
+    std::array<float, 6> getAllyValues() const
     {
         float footX = m_footPos.x;
         float temp_bodyAngle = m_bodyAngle;
@@ -166,7 +169,7 @@ public:
         float normElbowAngle = normalizeAngle(temp_elbowAngle);
         float normWristAngle = normalizeAngle(temp_wristAngle);
 
-        return {normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle};
+        return {normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle, m_momentum};
     }
 
     void drawSwordRectangle(sf::RenderWindow &window, const sf::Vector2f &wristPos, const sf::Vector2f &swordTip, sf::Color color)
@@ -345,6 +348,7 @@ private:
     float m_forearmLength;
     float m_handLength;
     int score; 
+    float m_momentum;
 
     bool m_isAlive;
     bool m_flipped;

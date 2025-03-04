@@ -82,15 +82,18 @@ public:
     void propagateForward(RowVector &input)
     {
         neuronLayers.front()->block(0, 0, 1, neuronLayers.front()->size() - 1) = input;
-
         for (size_t i = 1; i < topology.size(); i++)
         {
             (*neuronLayers[i]) = (*neuronLayers[i - 1]) * (*weights[i - 1]);
-            neuronLayers[i]->block(0, 0, 1, topology[i]) =
-                neuronLayers[i]->block(0, 0, 1, topology[i]).unaryExpr([this](Scalar x)
-                                                                       { return activationFunction(x); });
+            // Only apply activation function if it's not the output layer.
+            if (i != topology.size() - 1)
+            {
+                neuronLayers[i]->block(0, 0, 1, topology[i]) =
+                    neuronLayers[i]->block(0, 0, 1, topology[i]).unaryExpr([this](Scalar x){ return activationFunction(x); });
+            }
         }
     }
+    
 
     // Returns final layer as values mapped from [0,1] to [-1,1].
     std::vector<Scalar> getOutput() const
@@ -99,7 +102,7 @@ public:
         std::vector<Scalar> output(topology.back());
         for (size_t i = 0; i < topology.back(); i++)
         {
-            output[i] = 2 * (*outputLayer)(i)-1;
+            output[i] = std::tanh((*outputLayer)(i));
         }
         return output;
     }
@@ -123,10 +126,9 @@ public:
             }
         }
     }
-
     Scalar activationFunction(Scalar x)
     {
-        return 1.0f / (1.0f + std::exp(-x));
+        return (x > 0) ? x : 0;
     }
 
     // Clone method
