@@ -76,8 +76,10 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
 
     if (linesIntersect(aSwordStart, aSwordEnd, bSwordStart, bSwordEnd))
     {
-        B.applyKnockback(-50);
-        A.applyKnockback(50);
+        float Bforce = -120.f*(800-B.getFootPos().x)/800.f;
+        float Aforce = 120.f*A.getFootPos().x/800.f;
+        B.applyKnockback(Bforce);
+        A.applyKnockback(Aforce);
         if(A.get_m_momentum()>B.get_m_momentum()){
             A.incrementScore();
         }
@@ -107,8 +109,8 @@ void checkSwordHitsBody(Bot &attacker, Bot &victim)
 void handleCollisions(Bot &A, Bot &B)
 {
     checkSwordSwordCollision(A, B);
-    checkSwordHitsBody(A, B);
-    checkSwordHitsBody(B, A);
+    // checkSwordHitsBody(A, B);
+    // checkSwordHitsBody(B, A);
 }
 
 template <size_t N>
@@ -123,7 +125,7 @@ Eigen::RowVectorXf arrayToEigen(const std::array<float, N> &arr)
 }
 
 // Construct the 15-dimensional input for the net controlling botA, given botB as enemy
-Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB, float timer)
+Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB, float timer, bool flipScore)
 {
     timer/=500;
     auto botAAlly = botA.getAllyValues();   // std::array<float, 6>
@@ -131,9 +133,11 @@ Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB, float timer)
 
     Eigen::RowVectorXf vecA = arrayToEigen(botAAlly);
     Eigen::RowVectorXf vecB = arrayToEigen(botBEnemy);
+    float distance = (botB.getFootPos().x - botA.getFootPos().x)/800.f;
 
-    Eigen::RowVectorXf inputForNet(13);
-    inputForNet << vecA, vecB, timer;
+    float scoreDif = flipScore ?  botB.getScore() - botA.getScore() : botA.getScore() - botB.getScore();
+    Eigen::RowVectorXf inputForNet(15);
+    inputForNet << vecA, vecB, timer, distance, scoreDif;
     return inputForNet;
 }
 
@@ -154,7 +158,7 @@ void drawWalls(sf::RenderWindow &window){
 }
 
 int one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool display, sf::RenderWindow &window){
-    int timer = 400;
+    int timer = 500;
     std::vector<Scalar> output;
     std::array<float, 5> controlsA;
     std::array<float, 5> controlsB;
@@ -168,13 +172,13 @@ int one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool d
         }
         else{
             //Get Input Output BotB.
-            Eigen::RowVectorXf inputForNet2 = getInputForBot(botB, botA, timer);
+            Eigen::RowVectorXf inputForNet2 = getInputForBot(botB, botA, timer, true);
             net2.propagateForward(inputForNet2);
             output = net2.getOutput();
             std::copy_n(output.begin(), 5, controlsB.begin());
 
             //Get Input Output BotA.
-            Eigen::RowVectorXf inputForNet1 = getInputForBot(botA, botB, timer);
+            Eigen::RowVectorXf inputForNet1 = getInputForBot(botA, botB, timer, false);
             net1.propagateForward(inputForNet1);
             output = net1.getOutput();
             std::copy_n(output.begin(), 5, controlsA.begin());
@@ -219,9 +223,9 @@ int one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool d
 
 std::vector<neural> createInitialPopulation(int populationSize) {
     std::vector<neural> population;
-    std::vector<uint> topology = {13, 128, 128, 5};
-    Scalar evolutionRate = 0.1f;
-    Scalar mutationRate = 0.3f;
+    std::vector<uint> topology = {15, 256, 256, 5};
+    Scalar evolutionRate = 0.05f;
+    Scalar mutationRate = 0.2f;
 
     population.reserve(populationSize);  // Reserve space for efficiency
 
@@ -234,7 +238,7 @@ std::vector<neural> createInitialPopulation(int populationSize) {
 }
 
 
-void generationLearn(float swordA, float speedA, float bodyA)
+void generationLearn(float swordA, float speedA, float bodyA, int popSize)
 {
     sf::RenderWindow window(sf::VideoMode(800, 600), "Tournament Match");
     window.setFramerateLimit(600);
@@ -243,7 +247,6 @@ void generationLearn(float swordA, float speedA, float bodyA)
     Bot botB = Bot(650.f, 400.f, swordA, speedA, bodyA, true);
     int winner=0;
 
-    int popSize=124;
     std::vector<neural> population = createInitialPopulation(popSize);
     std::random_device rd;
     std::mt19937 rng(rd());
@@ -281,7 +284,7 @@ void generationLearn(float swordA, float speedA, float bodyA)
 int main()
 {
     srand(static_cast<unsigned int>(time(0)));
-    generationLearn(60.f, 0.2f, 100.f);
+    generationLearn(60.f, 0.12f, 100.f, 128);
                                 
     return 0;
 }

@@ -27,7 +27,7 @@ public:
         : m_footPos(footX, footY),
           m_speed(spd),
           m_bodyLength(bodyLen),
-          m_shoulderOffset(40.f),
+          m_shoulderOffset(0.4f),
           m_bodyAngle(3.1415f),
           m_armAngle(0.f),
           m_elbowAngle(0.f),
@@ -66,7 +66,7 @@ public:
         float direction = m_flipped ? 1.0f : -1.0f;
 
         // (1) Move footX
-        m_footPos.x -= 1.3f * direction * (controls[0]);
+        m_footPos.x += 2.f * direction * (controls[0]) - 0.5f*direction;
 
         float Pi = 3.14159f;
 
@@ -87,7 +87,7 @@ public:
 
         // (5) For body angle:
         m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
-        m_bodyAngle = std::max(0.8f * Pi, std::min(1.2f * Pi, m_bodyAngle + controls[4] * m_speed));
+        m_bodyAngle = std::max(0.8f * Pi, std::min(1.2f * Pi, m_bodyAngle + 0.4f*controls[4] * m_speed));
         m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
 
         float last_momentum=m_momentum;
@@ -96,7 +96,6 @@ public:
         if(std::abs(last_momentum)>std::abs(m_momentum)){
             m_momentum=0;
         }
-        m_momentum*=0.9f;
     }
 
     void kill() { m_isAlive = false; }
@@ -112,6 +111,7 @@ public:
     {
         if (m_isAlive)
             m_footPos.x -= disp;
+            m_momentum=0;
     }
 
     // For collisions: line foot->head
@@ -298,7 +298,7 @@ private:
         if (len < 1e-6f)
             return headPos;
         sf::Vector2f unitDir(footDir.x / len, footDir.y / len);
-        return headPos + unitDir * m_shoulderOffset;
+        return headPos + unitDir * m_shoulderOffset * m_bodyLength;
     }
 
     sf::Vector2f getElbowPos(const sf::Vector2f &shoulderPos) const
