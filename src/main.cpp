@@ -78,14 +78,19 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
     {
         float Bforce = -120.f*(800-B.getFootPos().x)/800.f;
         float Aforce = 120.f*A.getFootPos().x/800.f;
-        B.applyKnockback(Bforce);
-        A.applyKnockback(Aforce);
-        if(A.get_m_momentum()>B.get_m_momentum()){
+        if(A.get_m_momentum()==B.get_m_momentum())
+        {
+            A.incrementScore();
+            B.incrementScore();
+        }
+        else if(A.get_m_momentum()>B.get_m_momentum()){
             A.incrementScore();
         }
         else{
             B.incrementScore();
         }
+        B.applyKnockback(Bforce);
+        A.applyKnockback(Aforce);
     }
 }
 
@@ -223,7 +228,7 @@ int one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool d
 
 std::vector<neural> createInitialPopulation(int populationSize) {
     std::vector<neural> population;
-    std::vector<uint> topology = {15, 256, 256, 5};
+    std::vector<uint> topology = {15, 512, 256, 5};
     Scalar evolutionRate = 0.05f;
     Scalar mutationRate = 0.2f;
 

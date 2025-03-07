@@ -96,6 +96,7 @@ public:
         if(std::abs(last_momentum)>std::abs(m_momentum)){
             m_momentum=0;
         }
+        m_momentum*=0.9f;
     }
 
     void kill() { m_isAlive = false; }
