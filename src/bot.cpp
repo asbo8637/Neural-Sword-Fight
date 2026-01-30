@@ -37,6 +37,8 @@ public:
           m_handLength(sword),
           score(0),
           m_momentum(0.f),
+          m_lastControls{0.f, 0.f, 0.f, 0.f, 0.f},
+          m_hasLastControls(false),
           m_isAlive(true),
           m_flipped(flipped)
     {
@@ -57,7 +59,6 @@ public:
         if (!m_isAlive)
             return;
         
-        sf::Vector2f last_sword_tip = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
         // Define boundaries for the foot's x position.
         const float minX = 100.f;
         const float maxX = 700.f;
@@ -91,13 +92,24 @@ public:
         m_bodyAngle = std::max(0.8f * Pi, std::min(1.2f * Pi, m_bodyAngle + 0.4f*controls[4] * m_speed));
         m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
 
-        float last_momentum=m_momentum;
-        sf::Vector2f current_sword_tip = getSwordTip(getWristPos(getElbowPos(getShoulderPos())));
-        m_momentum += (current_sword_tip.y - last_sword_tip.y);
-        if(std::abs(last_momentum)>std::abs(m_momentum)){
-            m_momentum=0;
+        if (m_hasLastControls)
+        {
+            float deltaMomentum = 0.f;
+            for (size_t i = 0; i < controls.size(); ++i)
+            {
+                float cur = controls[i];
+                float prev = m_lastControls[i];
+                bool sameDirection = (cur >= 0.f) == (prev >= 0.f);
+                deltaMomentum += sameDirection ? std::abs(cur) : -std::abs(cur);
+            }
+            m_momentum = 0.9f * m_momentum + 0.1f * deltaMomentum;
         }
-        m_momentum*=0.9f;
+        else
+        {
+            m_momentum = 0.f;
+            m_hasLastControls = true;
+        }
+        m_lastControls = controls;
     }
 
     void kill() { m_isAlive = false; }
@@ -106,7 +118,7 @@ public:
 
     int getScore() const {return score;}
     void incrementScore() {score++;}
-    float get_m_momentum() const {return std::abs(m_momentum);}
+    float get_m_momentum() const {return m_momentum;}
 
     // Knockback
     void applyKnockback(float disp)
@@ -352,6 +364,8 @@ private:
     float m_handLength;
     int score; 
     float m_momentum;
+    std::array<float, 5> m_lastControls;
+    bool m_hasLastControls;
 
     bool m_isAlive;
     bool m_flipped;

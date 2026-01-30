@@ -427,7 +427,7 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
 int main()
 {  
     srand(static_cast<unsigned int>(time(0)));
-    generationLearn(60.f, 0.12f, 100.f, 1028);
+    generationLearn(60.f, 0.5f, 100.f, 1028);
                                 
     return 0;
 }
