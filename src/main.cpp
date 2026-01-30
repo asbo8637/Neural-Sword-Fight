@@ -174,7 +174,7 @@ struct RoundResult
 };
 
 RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool display, sf::RenderWindow &window, float &playbackDelayMs, bool &renderPaused){
-    int timer = 500;
+    int timer = 700;
     std::vector<Scalar> output;
     std::array<float, 5> controlsA;
     std::array<float, 5> controlsB;
@@ -202,6 +202,14 @@ RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds
             //Update Bots
             botB.updateFromNN(controlsB);
             botA.updateFromNN(controlsA);
+
+            // Win by reaching the enemy side
+            const float winLeft = 200.f;
+            const float winRight = 600.f;
+            if (botA.getFootPos().x >= winRight)
+                return {1, false, botA.getScore(), botB.getScore()};
+            if (botB.getFootPos().x <= winLeft)
+                return {2, false, botA.getScore(), botB.getScore()};
 
 
             //Deal with collisions and detect deaths: 
@@ -282,7 +290,7 @@ RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds
 
 std::vector<neural> createInitialPopulation(int populationSize) {
     std::vector<neural> population;
-    std::vector<uint> topology = {15, 164, 164, 5};
+    std::vector<uint> topology = {15, 256, 200, 30, 5};
     Scalar evolutionRate = 0.03f;
     Scalar mutationRate = 0.06f;
 
@@ -337,7 +345,7 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
     while (true)
     {
         rounds++;
-        if(rounds%15==0){
+        if(rounds%25==0){
             std::shuffle(population.begin(), population.end(), rng);
         }
         else{
