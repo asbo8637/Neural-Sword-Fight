@@ -50,6 +50,7 @@ public:
         m_head.setRadius(10.f);
         m_head.setOrigin(10.f, 10.f);
         m_head.setFillColor(sf::Color::Blue);
+        m_faceColor = m_flipped ? sf::Color::Blue : sf::Color::Red;
     }
 
     // New update method: we pass in 5 values (0..1)
@@ -67,29 +68,29 @@ public:
         float direction = m_flipped ? 1.0f : -1.0f;
 
         // (1) Move footX
-        m_footPos.x += 2.f * direction * (controls[0]) - 0.5f * direction;
+        m_footPos.x += 2.f * direction * (controls[4]) - 0.5f * direction;
         m_footPos.x = std::max(minX, std::min(maxX, m_footPos.x));
 
         float Pi = 3.14159f;
 
         // (2) For arm angle:
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
-        m_armAngle = std::max(-2.5f * Pi, std::min(1.5f * Pi, m_armAngle + 0.4f*controls[1] * m_speed));
+        m_armAngle = std::max(-2.5f * Pi, std::min(1.5f * Pi, m_armAngle + 0.5f * controls[2] * m_speed));
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
 
         // (3) For elbow angle:
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
-        m_elbowAngle = std::max(-0.5f * Pi, std::min(0.5f * Pi, m_elbowAngle + 0.9f * controls[2] * m_speed));
+        m_elbowAngle = std::max(-0.5f * Pi, std::min(0.5f * Pi, m_elbowAngle + 0.9f * controls[1] * m_speed));
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
 
         // (4) For wrist angle:
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
-        m_wristAngle = std::max(-0.2f * Pi, std::min(0.2f * Pi, m_wristAngle + controls[3] * m_speed));
+        m_wristAngle = std::max(-0.2f * Pi, std::min(0.2f * Pi, m_wristAngle + controls[0] * m_speed));
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
 
         // (5) For body angle:
         m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
-        m_bodyAngle = std::max(0.8f * Pi, std::min(1.2f * Pi, m_bodyAngle + 0.4f*controls[4] * m_speed));
+        m_bodyAngle = std::max(0.8f * Pi, std::min(1.2f * Pi, m_bodyAngle + 0.4f * controls[3] * m_speed));
         m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
 
         if (m_hasLastControls)
@@ -99,8 +100,8 @@ public:
 
             float armMin = -2.5f * Pi;
             float armMax = 1.5f * Pi;
-            float elbowMin = -2.f * Pi;
-            float elbowMax = 2.f * Pi;
+            float elbowMin = -0.5f * Pi;
+            float elbowMax = 0.5f * Pi;
             float wristMin = -0.2f * Pi;
             float wristMax = 0.2f * Pi;
             float bodyMin = 0.8f * Pi;
@@ -131,14 +132,16 @@ public:
                 bool sameDirection = (cur >= 0.f) == (prev >= 0.f);
                 float contribution = sameDirection ? std::abs(cur) : -std::abs(cur);
 
-                if (i == 1 && atLimit(m_armAngle, armMin, armMax))
+                if (i == 2 && atLimit(m_armAngle, armMin, armMax))
                     contribution = -contribution;
-                else if (i == 2 && atLimit(m_elbowAngle, elbowMin, elbowMax))
+                else if (i == 1 && atLimit(m_elbowAngle, elbowMin, elbowMax))
                     contribution = -contribution;
-                else if (i == 3 && atLimit(m_wristAngle, wristMin, wristMax))
+                else if (i == 0 && atLimit(m_wristAngle, wristMin, wristMax))
                     contribution = -contribution;
-                else if (i == 4 && atLimit(m_bodyAngle, bodyMin, bodyMax))
+                else if (i == 3 && atLimit(m_bodyAngle, bodyMin, bodyMax))
                     contribution = -contribution;
+
+                contribution *= static_cast<float>(i + 1);
 
                 deltaMomentum += contribution;
             }
@@ -254,7 +257,7 @@ public:
         // Face circle.
         float faceRadius = 15.f;
         sf::CircleShape face(faceRadius);
-        face.setFillColor(sf::Color::Yellow);
+        face.setFillColor(m_faceColor);
         face.setOutlineThickness(2.f);
         face.setOutlineColor(sf::Color::Black);
         // Center the face by setting its origin to its center.
@@ -303,7 +306,7 @@ public:
         // Arm
         drawLine(window, shoulderPos, elbowPos, sf::Color::White);
         drawLine(window, elbowPos, wristPos, sf::Color::White);
-        drawSwordRectangle(window, wristPos, swordTip, sf::Color::Red);
+        drawSwordRectangle(window, wristPos, swordTip, m_faceColor);
         
 
         // Circles
@@ -413,4 +416,5 @@ private:
     // Visuals
     sf::CircleShape m_jointCircle;
     sf::CircleShape m_head;
+    sf::Color m_faceColor;
 };
