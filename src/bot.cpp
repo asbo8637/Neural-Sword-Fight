@@ -227,7 +227,8 @@ public:
         float normElbowAngle = normalizeAngle(temp_elbowAngle);
         float normWristAngle = normalizeAngle(temp_wristAngle);
 
-        return {normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle, m_momentum};
+        float normMomentum = std::tanh(m_momentum / 5.f);
+        return {normFootX, normBodyAngle, normArmAngle, normElbowAngle, normWristAngle, normMomentum};
     }
 
     void drawSwordRectangle(sf::RenderWindow &window, const sf::Vector2f &wristPos, const sf::Vector2f &swordTip, sf::Color color)

@@ -135,17 +135,20 @@ Eigen::RowVectorXf arrayToEigen(const std::array<float, N> &arr)
 // Construct the 15-dimensional input for the net controlling botA, given botB as enemy
 Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB, float timer, bool flipScore)
 {
-    timer/=500;
+    timer /= 500;
     auto botAAlly = botA.getAllyValues();   // std::array<float, 6>
     auto botBEnemy = botB.getAllyValues();
 
     Eigen::RowVectorXf vecA = arrayToEigen(botAAlly);
     Eigen::RowVectorXf vecB = arrayToEigen(botBEnemy);
-    float distance = (botB.getFootPos().x - botA.getFootPos().x)/800.f;
+    float distance = (botB.getFootPos().x - botA.getFootPos().x) / 800.f;
+    distance = std::max(-1.f, std::min(1.f, distance));
 
-    float scoreDif = flipScore ?  botB.getScore() - botA.getScore() : botA.getScore() - botB.getScore();
+    float scoreDif = flipScore ? botB.getScore() - botA.getScore() : botA.getScore() - botB.getScore();
+    const float scoreScale = 10.f;
+    float scoreNorm = std::tanh(scoreDif / scoreScale);
     Eigen::RowVectorXf inputForNet(15);
-    inputForNet << vecA, vecB, timer, distance, scoreDif;
+    inputForNet << vecA, vecB, timer, distance, scoreNorm;
     return inputForNet;
 }
 
@@ -174,7 +177,7 @@ struct RoundResult
 };
 
 RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool display, sf::RenderWindow &window, float &playbackDelayMs, bool &renderPaused){
-    int timer = 700;
+    int timer = 500;
     std::vector<Scalar> output;
     std::array<float, 5> controlsA;
     std::array<float, 5> controlsB;
@@ -290,7 +293,7 @@ RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds
 
 std::vector<neural> createInitialPopulation(int populationSize) {
     std::vector<neural> population;
-    std::vector<uint> topology = {15, 256, 200, 30, 5};
+    std::vector<uint> topology = {15, 256, 128, 64, 16, 5};
     Scalar evolutionRate = 0.03f;
     Scalar mutationRate = 0.06f;
 
@@ -345,7 +348,7 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
     while (true)
     {
         rounds++;
-        if(rounds%25==0){
+        if(rounds%10==0){
             std::shuffle(population.begin(), population.end(), rng);
         }
         else{
@@ -435,7 +438,7 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
 int main()
 {  
     srand(static_cast<unsigned int>(time(0)));
-    generationLearn(60.f, 0.16f, 100.f, 1028);
+    generationLearn(60.f, 0.14f, 100.f, 800);
                                 
     return 0;
 }
