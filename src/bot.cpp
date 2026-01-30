@@ -32,13 +32,13 @@ public:
           m_armAngle(0.f),
           m_elbowAngle(0.f),
           m_wristAngle(0.f),
-          m_armLength(30.f),
+          m_armLength(40.f),
           m_forearmLength(30.f),
           m_handLength(sword),
-          m_isAlive(true),
-          m_flipped(flipped),
+          score(0),
           m_momentum(0.f),
-          score(0)
+          m_isAlive(true),
+          m_flipped(flipped)
     {
         // Circles for joints
         m_jointCircle.setRadius(2.f);
@@ -66,7 +66,8 @@ public:
         float direction = m_flipped ? 1.0f : -1.0f;
 
         // (1) Move footX
-        m_footPos.x += 2.f * direction * (controls[0]) - 0.5f*direction;
+        m_footPos.x += 2.f * direction * (controls[0]) - 0.5f * direction;
+        m_footPos.x = std::max(minX, std::min(maxX, m_footPos.x));
 
         float Pi = 3.14159f;
 
@@ -77,7 +78,7 @@ public:
 
         // (3) For elbow angle:
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
-        m_elbowAngle = std::max(-2.f * Pi, std::min(2.f * Pi, m_elbowAngle + 0.9f * controls[2] * m_speed));
+        m_elbowAngle = std::max(-0.5f * Pi, std::min(0.5f * Pi, m_elbowAngle + 0.9f * controls[2] * m_speed));
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
 
         // (4) For wrist angle:
@@ -111,8 +112,10 @@ public:
     void applyKnockback(float disp)
     {
         if (m_isAlive)
+        {
             m_footPos.x -= disp;
-            m_momentum=0;
+            m_momentum = 0;
+        }
     }
 
     // For collisions: line foot->head
@@ -149,7 +152,6 @@ public:
         if (m_flipped)
         {
             footX = 800 - footX;
-            float pi = 3.14159f;
             temp_bodyAngle = -m_bodyAngle;
             temp_armAngle = -m_armAngle;
             temp_elbowAngle = -m_elbowAngle;

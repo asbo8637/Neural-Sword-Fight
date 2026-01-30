@@ -7,6 +7,8 @@
 #include <vector>
 #include <ctime>
 #include <cstdlib>
+#include <thread>
+#include <atomic>
 #include "bot.cpp"
 #include "neural.cpp"
 #include <algorithm>
@@ -76,8 +78,9 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
 
     if (linesIntersect(aSwordStart, aSwordEnd, bSwordStart, bSwordEnd))
     {
-        float Bforce = -120.f*(800-B.getFootPos().x)/800.f;
-        float Aforce = 120.f*A.getFootPos().x/800.f;
+        const float knockbackBase = 300.f;
+        float Bforce = -knockbackBase * (800 - B.getFootPos().x) / 800.f;
+        float Aforce = knockbackBase * A.getFootPos().x / 800.f;
         if(A.get_m_momentum()==B.get_m_momentum())
         {
             A.incrementScore();
@@ -114,8 +117,8 @@ void checkSwordHitsBody(Bot &attacker, Bot &victim)
 void handleCollisions(Bot &A, Bot &B)
 {
     checkSwordSwordCollision(A, B);
-    // checkSwordHitsBody(A, B);
-    // checkSwordHitsBody(B, A);
+    checkSwordHitsBody(A, B);
+    checkSwordHitsBody(B, A);
 }
 
 template <size_t N>
@@ -162,7 +165,15 @@ void drawWalls(sf::RenderWindow &window){
     //window.draw(rw);
 }
 
-int one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool display, sf::RenderWindow &window){
+struct RoundResult
+{
+    int winner;
+    bool timedOut;
+    int scoreA;
+    int scoreB;
+};
+
+RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool display, sf::RenderWindow &window, float &playbackDelayMs, bool &renderPaused){
     int timer = 500;
     std::vector<Scalar> output;
     std::array<float, 5> controlsA;
@@ -170,10 +181,10 @@ int one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool d
     while(timer>0){
         timer--;
         if(!botA.isAlive()){
-            return 2;
+            return {2, false, botA.getScore(), botB.getScore()};
         }
         if(!botB.isAlive()){
-            return 1;
+            return {1, false, botA.getScore(), botB.getScore()};
         }
         else{
             //Get Input Output BotB.
@@ -211,7 +222,8 @@ int one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool d
                 botA.draw(window);
                 botB.draw(window);
                 drawWalls(window);
-                window.display();
+                if (!renderPaused)
+                    window.display();
 
                 // Poll events
                 sf::Event event;
@@ -219,18 +231,60 @@ int one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool d
                 {
                     if (event.type == sf::Event::Closed)
                         window.close();
+                    if (event.type == sf::Event::KeyPressed)
+                    {
+                        if (event.key.code == sf::Keyboard::P)
+                        {
+                            renderPaused = !renderPaused;
+                            if (renderPaused)
+                                playbackDelayMs = 0.f;
+                        }
+                        if (event.key.code == sf::Keyboard::Add || event.key.code == sf::Keyboard::Equal)
+                        {
+                            playbackDelayMs = std::max(0.f, playbackDelayMs - 2.f);
+                        }
+                        else if (event.key.code == sf::Keyboard::Subtract || event.key.code == sf::Keyboard::Hyphen)
+                        {
+                            playbackDelayMs = std::min(200.f, playbackDelayMs + 2.f);
+                        }
+                    }
                 }
+                if (playbackDelayMs > 0.f)
+                    sf::sleep(sf::milliseconds(static_cast<int>(playbackDelayMs)));
             }
         }
     }
-    return 3;
+    int scoreA = botA.getScore();
+    int scoreB = botB.getScore();
+    int winner = 0;
+    if (scoreA > scoreB)
+    {
+        winner = 1;
+    }
+    else if (scoreB > scoreA)
+    {
+        winner = 2;
+    }
+    else
+    {
+        // Tie-breaker: closer to enemy side wins.
+        float distA = 800.f - botA.getFootPos().x; // A's enemy side is right.
+        float distB = botB.getFootPos().x;        // B's enemy side is left.
+        if (distA < distB)
+            winner = 1;
+        else if (distB < distA)
+            winner = 2;
+        else
+            winner = 1;
+    }
+    return {winner, true, scoreA, scoreB};
 }
 
 std::vector<neural> createInitialPopulation(int populationSize) {
     std::vector<neural> population;
-    std::vector<uint> topology = {15, 512, 256, 5};
-    Scalar evolutionRate = 0.05f;
-    Scalar mutationRate = 0.2f;
+    std::vector<uint> topology = {15, 164, 164, 5};
+    Scalar evolutionRate = 0.03f;
+    Scalar mutationRate = 0.06f;
 
     population.reserve(populationSize);  // Reserve space for efficiency
 
@@ -245,9 +299,33 @@ std::vector<neural> createInitialPopulation(int populationSize) {
 
 void generationLearn(float swordA, float speedA, float bodyA, int popSize)
 {
-    sf::RenderWindow window(sf::VideoMode(800, 600), "Tournament Match");
+    const float gameWidth = 800.f;
+    const float gameHeight = 600.f;
+    const unsigned int windowWidth = 1280;
+    const unsigned int windowHeight = 720;
+    sf::RenderWindow window(sf::VideoMode(windowWidth, windowHeight), "Tournament Match");
+    {
+        sf::View view(sf::FloatRect(0.f, 0.f, gameWidth, gameHeight));
+        float windowRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
+        float viewRatio = gameWidth / gameHeight;
+        if (windowRatio > viewRatio)
+        {
+            float width = viewRatio / windowRatio;
+            float left = (1.f - width) * 0.5f;
+            view.setViewport(sf::FloatRect(left, 0.f, width, 1.f));
+        }
+        else
+        {
+            float height = windowRatio / viewRatio;
+            float top = (1.f - height) * 0.5f;
+            view.setViewport(sf::FloatRect(0.f, top, 1.f, height));
+        }
+        window.setView(view);
+    }
     window.setFramerateLimit(600);
     int rounds = 0;
+    float playbackDelayMs = 2.f;
+    bool renderPaused = false;
     Bot botA = Bot(150.f, 400.f, swordA, speedA, bodyA, false);
     Bot botB = Bot(650.f, 400.f, swordA, speedA, bodyA, true);
     int winner=0;
@@ -258,25 +336,85 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
 
     while (true)
     {
-        std::shuffle(population.begin(), population.end(), rng);
         rounds++;
-        for(int i=0; i<popSize; i+=2){
-            botA = Bot(250.f, 400.f, swordA, speedA, bodyA, false);
-            botB = Bot(550.f, 400.f, swordA, speedA, bodyA, true);
-            winner=one_round(population[i], population[i+1], botA, botB, rounds, i==0, window);
-
-            if(winner==3){
-                if(i==0) std::cout << "DRAW! A score: " << botA.getScore() << " / B score: " << botB.getScore() << std::endl;
-                winner = botA.getScore()>=botB.getScore() ? 1 : 2;
+        if(rounds%15==0){
+            std::shuffle(population.begin(), population.end(), rng);
+        }
+        else{
+            for (int base = 0; base < popSize; base += popSize/4)
+            {
+                int end = std::min(base + popSize/4, popSize);
+                std::shuffle(population.begin() + base, population.begin() + end, rng);
             }
-            if(winner==1){
-                if(i==0) std::cout << "A WINS! Generation: " << rounds << std::endl;
-                population[i+1]=population[i].clone();
+        }
+
+        const int pairCount = popSize / 2;
+        std::vector<RoundResult> results(pairCount);
+        std::atomic<int> nextPair(1);
+
+        unsigned int hwThreads = std::thread::hardware_concurrency();
+        int workerCount = 0;
+        if (pairCount > 1)
+        {
+            if (hwThreads == 0)
+                workerCount = 1;
+            else
+                workerCount = static_cast<int>(std::max(1u, hwThreads - 1));
+            workerCount = std::min(workerCount, pairCount - 1);
+        }
+
+        std::vector<std::thread> workers;
+        workers.reserve(workerCount);
+        for (int w = 0; w < workerCount; ++w)
+        {
+            workers.emplace_back([&](){
+                float dummyDelay = 0.f;
+                bool dummyPaused = false;
+                while (true)
+                {
+                    int pairIndex = nextPair.fetch_add(1);
+                    if (pairIndex >= pairCount)
+                        break;
+                    int i = pairIndex * 2;
+                    Bot localA(250.f, 400.f, swordA, speedA, bodyA, false);
+                    Bot localB(550.f, 400.f, swordA, speedA, bodyA, true);
+                    results[pairIndex] = one_round(population[i], population[i+1], localA, localB, rounds, false, window, dummyDelay, dummyPaused);
+                }
+            });
+        }
+
+        // Run the displayed match on the main thread.
+        botA = Bot(250.f, 400.f, swordA, speedA, bodyA, false);
+        botB = Bot(550.f, 400.f, swordA, speedA, bodyA, true);
+        results[0] = one_round(population[0], population[1], botA, botB, rounds, true, window, playbackDelayMs, renderPaused);
+
+        for (auto &t : workers)
+            t.join();
+
+        for (int pairIndex = 0; pairIndex < pairCount; ++pairIndex)
+        {
+            int i = pairIndex * 2;
+
+            winner = results[pairIndex].winner;
+            if (pairIndex == 0)
+            {
+                if (results[pairIndex].timedOut)
+                {
+                    std::cout << "DRAW! A score: " << results[pairIndex].scoreA
+                              << " / B score: " << results[pairIndex].scoreB << std::endl;
+                }
+                if (winner == 1) std::cout << "A WINS! Generation: " << rounds << std::endl;
+                else if (winner == 2) std::cout << "B WINS! Generation: " << rounds << std::endl;
+            }
+
+            if (winner == 1)
+            {
+                population[i+1] = population[i].clone();
                 population[i+1].updateWeights();
             }
-            else if(winner==2){
-                if(i==0) std::cout << "B WINS! Generation: " << rounds << std::endl;
-                population[i]=population[i+1].clone();
+            else if (winner == 2)
+            {
+                population[i] = population[i+1].clone();
                 population[i].updateWeights();
             }
         }
@@ -287,9 +425,9 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
 
 
 int main()
-{
+{  
     srand(static_cast<unsigned int>(time(0)));
-    generationLearn(60.f, 0.12f, 100.f, 128);
+    generationLearn(60.f, 0.12f, 100.f, 1028);
                                 
     return 0;
 }

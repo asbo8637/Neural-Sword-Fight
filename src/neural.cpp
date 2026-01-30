@@ -89,7 +89,7 @@ public:
             if (i != topology.size() - 1)
             {
                 neuronLayers[i]->block(0, 0, 1, topology[i]) =
-                    neuronLayers[i]->block(0, 0, 1, topology[i]).unaryExpr([this](Scalar x){ return activationFunction(x); });
+                    neuronLayers[i]->block(0, 0, 1, topology[i]).unaryExpr([this](Scalar x) -> Scalar { return activationFunction(x); });
             }
         }
     }
@@ -112,9 +112,9 @@ public:
     {
         for (size_t i = 0; i < weights.size(); i++)
         {
-            for (size_t r = 0; r < weights[i]->rows(); r++)
+            for (Eigen::Index r = 0; r < weights[i]->rows(); r++)
             {
-                for (size_t c = 0; c < weights[i]->cols(); c++)
+                for (Eigen::Index c = 0; c < weights[i]->cols(); c++)
                 {
                     Scalar randVal = static_cast<Scalar>(rand()) / RAND_MAX;
                     if (randVal < mutationRate)
@@ -128,7 +128,7 @@ public:
     }
     Scalar activationFunction(Scalar x)
     {
-        return (x > 0) ? x : 0;
+        return (x > 0) ? x : static_cast<Scalar>(0);
     }
 
     // Clone method
