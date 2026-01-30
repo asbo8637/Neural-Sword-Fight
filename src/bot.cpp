@@ -94,13 +94,53 @@ public:
 
         if (m_hasLastControls)
         {
+            const float Pi = 3.14159f;
+            const float eps = 0.01f;
+
+            float armMin = -2.5f * Pi;
+            float armMax = 1.5f * Pi;
+            float elbowMin = -2.f * Pi;
+            float elbowMax = 2.f * Pi;
+            float wristMin = -0.2f * Pi;
+            float wristMax = 0.2f * Pi;
+            float bodyMin = 0.8f * Pi;
+            float bodyMax = 1.2f * Pi;
+            if (m_flipped)
+            {
+                float newArmMin = -armMax;
+                float newArmMax = -armMin;
+                armMin = newArmMin;
+                armMax = newArmMax;
+
+                float newBodyMin = -bodyMax;
+                float newBodyMax = -bodyMin;
+                bodyMin = newBodyMin;
+                bodyMax = newBodyMax;
+            }
+
+            auto atLimit = [&](float angle, float minVal, float maxVal) -> bool
+            {
+                return angle <= minVal + eps || angle >= maxVal - eps;
+            };
+
             float deltaMomentum = 0.f;
             for (size_t i = 0; i < controls.size(); ++i)
             {
                 float cur = controls[i];
                 float prev = m_lastControls[i];
                 bool sameDirection = (cur >= 0.f) == (prev >= 0.f);
-                deltaMomentum += sameDirection ? std::abs(cur) : -std::abs(cur);
+                float contribution = sameDirection ? std::abs(cur) : -std::abs(cur);
+
+                if (i == 1 && atLimit(m_armAngle, armMin, armMax))
+                    contribution = -contribution;
+                else if (i == 2 && atLimit(m_elbowAngle, elbowMin, elbowMax))
+                    contribution = -contribution;
+                else if (i == 3 && atLimit(m_wristAngle, wristMin, wristMax))
+                    contribution = -contribution;
+                else if (i == 4 && atLimit(m_bodyAngle, bodyMin, bodyMax))
+                    contribution = -contribution;
+
+                deltaMomentum += contribution;
             }
             m_momentum = 0.9f * m_momentum + 0.1f * deltaMomentum;
         }
