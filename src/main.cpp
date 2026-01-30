@@ -344,6 +344,7 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
     std::vector<neural> population = createInitialPopulation(popSize);
     std::random_device rd;
     std::mt19937 rng(rd());
+    std::uniform_real_distribution<float> upsetDist(0.f, 1.f);
 
     while (true)
     {
@@ -407,6 +408,11 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
             int i = pairIndex * 2;
 
             winner = results[pairIndex].winner;
+            if (winner == 1 || winner == 2)
+            {
+                if (upsetDist(rng) < 0.01f)
+                    winner = (winner == 1) ? 2 : 1;
+            }
             if (pairIndex == 0)
             {
                 if (results[pairIndex].timedOut)
