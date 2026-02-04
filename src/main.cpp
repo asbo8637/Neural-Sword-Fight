@@ -147,7 +147,7 @@ Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB, float timer, bool flipScor
     float scoreDif = flipScore ? botB.getScore() - botA.getScore() : botA.getScore() - botB.getScore();
     const float scoreScale = 10.f;
     float scoreNorm = std::tanh(scoreDif / scoreScale);
-    Eigen::RowVectorXf inputForNet(15);
+    Eigen::RowVectorXf inputForNet(25);
     inputForNet << vecA, vecB, timer, distance, scoreNorm;
     return inputForNet;
 }
@@ -177,7 +177,7 @@ struct RoundResult
 };
 
 RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool display, sf::RenderWindow &window, float &playbackDelayMs, bool &renderPaused){
-    int timer = 500;
+    int timer = 400;
     std::vector<Scalar> output;
     std::array<float, 5> controlsA;
     std::array<float, 5> controlsB;
@@ -293,9 +293,9 @@ RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds
 
 std::vector<neural> createInitialPopulation(int populationSize) {
     std::vector<neural> population;
-    std::vector<uint> topology = {15, 256, 128, 64, 16, 5};
-    Scalar evolutionRate = 0.03f;
-    Scalar mutationRate = 0.06f;
+    std::vector<uint> topology = {25, 750, 5};
+    Scalar evolutionRate = 0.02f;
+    Scalar mutationRate = 0.02f;
 
     population.reserve(populationSize);  // Reserve space for efficiency
 
@@ -444,7 +444,7 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
 int main()
 {  
     srand(static_cast<unsigned int>(time(0)));
-    generationLearn(60.f, 0.14f, 100.f, 800);
+    generationLearn(60.f, 0.18f, 100.f, 800);
                                 
     return 0;
 }
