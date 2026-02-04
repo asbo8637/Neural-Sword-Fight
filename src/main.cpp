@@ -81,17 +81,6 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
         const float knockbackBase = 300.f;
         float Bforce = -knockbackBase * (800 - B.getFootPos().x) / 800.f;
         float Aforce = knockbackBase * A.getFootPos().x / 800.f;
-        if(A.get_m_momentum()==B.get_m_momentum())
-        {
-            A.incrementScore();
-            B.incrementScore();
-        }
-        else if(A.get_m_momentum()>B.get_m_momentum()){
-            A.incrementScore();
-        }
-        else{
-            B.incrementScore();
-        }
         B.applyKnockback(Bforce);
         A.applyKnockback(Aforce);
     }
@@ -132,11 +121,11 @@ Eigen::RowVectorXf arrayToEigen(const std::array<float, N> &arr)
     return vec;
 }
 
-// Construct the 15-dimensional input for the net controlling botA, given botB as enemy
-Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB, float timer, bool flipScore)
+// Construct the 24-dimensional input for the net controlling botA, given botB as enemy
+Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB, float timer)
 {
     timer /= 500;
-    auto botAAlly = botA.getAllyValues();   // std::array<float, 6>
+    auto botAAlly = botA.getAllyValues();   // std::array<float, 11>
     auto botBEnemy = botB.getAllyValues();
 
     Eigen::RowVectorXf vecA = arrayToEigen(botAAlly);
@@ -144,11 +133,8 @@ Eigen::RowVectorXf getInputForBot(Bot botA, Bot botB, float timer, bool flipScor
     float distance = (botB.getFootPos().x - botA.getFootPos().x) / 800.f;
     distance = std::max(-1.f, std::min(1.f, distance));
 
-    float scoreDif = flipScore ? botB.getScore() - botA.getScore() : botA.getScore() - botB.getScore();
-    const float scoreScale = 10.f;
-    float scoreNorm = std::tanh(scoreDif / scoreScale);
-    Eigen::RowVectorXf inputForNet(25);
-    inputForNet << vecA, vecB, timer, distance, scoreNorm;
+    Eigen::RowVectorXf inputForNet(24);
+    inputForNet << vecA, vecB, timer, distance;
     return inputForNet;
 }
 
@@ -172,8 +158,6 @@ struct RoundResult
 {
     int winner;
     bool timedOut;
-    int scoreA;
-    int scoreB;
 };
 
 RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds, bool display, sf::RenderWindow &window, float &playbackDelayMs, bool &renderPaused){
@@ -183,21 +167,24 @@ RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds
     std::array<float, 5> controlsB;
     while(timer>0){
         timer--;
+        if(!botA.isAlive() && !botB.isAlive()){
+            return {1, false};
+        }
         if(!botA.isAlive()){
-            return {2, false, botA.getScore(), botB.getScore()};
+            return {2, false};
         }
         if(!botB.isAlive()){
-            return {1, false, botA.getScore(), botB.getScore()};
+            return {1, false};
         }
         else{
             //Get Input Output BotB.
-            Eigen::RowVectorXf inputForNet2 = getInputForBot(botB, botA, timer, true);
+            Eigen::RowVectorXf inputForNet2 = getInputForBot(botB, botA, timer);
             net2.propagateForward(inputForNet2);
             output = net2.getOutput();
             std::copy_n(output.begin(), 5, controlsB.begin());
 
             //Get Input Output BotA.
-            Eigen::RowVectorXf inputForNet1 = getInputForBot(botA, botB, timer, false);
+            Eigen::RowVectorXf inputForNet1 = getInputForBot(botA, botB, timer);
             net1.propagateForward(inputForNet1);
             output = net1.getOutput();
             std::copy_n(output.begin(), 5, controlsA.begin());
@@ -205,15 +192,6 @@ RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds
             //Update Bots
             botB.updateFromNN(controlsB);
             botA.updateFromNN(controlsA);
-
-            // Win by reaching the enemy side
-            const float winLeft = 200.f;
-            const float winRight = 600.f;
-            if (botA.getFootPos().x >= winRight)
-                return {1, false, botA.getScore(), botB.getScore()};
-            if (botB.getFootPos().x <= winLeft)
-                return {2, false, botA.getScore(), botB.getScore()};
-
 
             //Deal with collisions and detect deaths: 
             handleCollisions(botA, botB);
@@ -265,35 +243,12 @@ RoundResult one_round(neural net1, neural net2, Bot &botA, Bot &botB, int rounds
             }
         }
     }
-    int scoreA = botA.getScore();
-    int scoreB = botB.getScore();
-    int winner = 0;
-    if (scoreA > scoreB)
-    {
-        winner = 1;
-    }
-    else if (scoreB > scoreA)
-    {
-        winner = 2;
-    }
-    else
-    {
-        // Tie-breaker: closer to enemy side wins.
-        float distA = 800.f - botA.getFootPos().x; // A's enemy side is right.
-        float distB = botB.getFootPos().x;        // B's enemy side is left.
-        if (distA < distB)
-            winner = 1;
-        else if (distB < distA)
-            winner = 2;
-        else
-            winner = 1;
-    }
-    return {winner, true, scoreA, scoreB};
+    return {1, true};
 }
 
 std::vector<neural> createInitialPopulation(int populationSize) {
     std::vector<neural> population;
-    std::vector<uint> topology = {25, 750, 5};
+    std::vector<uint> topology = {24, 2000, 5};
     Scalar evolutionRate = 0.02f;
     Scalar mutationRate = 0.02f;
 
@@ -408,7 +363,7 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
             int i = pairIndex * 2;
 
             winner = results[pairIndex].winner;
-            if (winner == 1 || winner == 2)
+            if (!results[pairIndex].timedOut && (winner == 1 || winner == 2))
             {
                 if (upsetDist(rng) < 0.01f)
                     winner = (winner == 1) ? 2 : 1;
@@ -417,8 +372,7 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
             {
                 if (results[pairIndex].timedOut)
                 {
-                    std::cout << "DRAW! A score: " << results[pairIndex].scoreA
-                              << " / B score: " << results[pairIndex].scoreB << std::endl;
+                    std::cout << "TIMEOUT -> A WINS" << std::endl;
                 }
                 if (winner == 1) std::cout << "A WINS! Generation: " << rounds << std::endl;
                 else if (winner == 2) std::cout << "B WINS! Generation: " << rounds << std::endl;
@@ -444,7 +398,7 @@ void generationLearn(float swordA, float speedA, float bodyA, int popSize)
 int main()
 {  
     srand(static_cast<unsigned int>(time(0)));
-    generationLearn(60.f, 0.18f, 100.f, 800);
+    generationLearn(80.f, 0.07f, 100.f, 800);
                                 
     return 0;
 }

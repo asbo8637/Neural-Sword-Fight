@@ -35,7 +35,6 @@ public:
           m_armLength(40.f),
           m_forearmLength(30.f),
           m_handLength(sword),
-          score(0),
           m_momentum(0.f),
           m_lastControls{0.f, 0.f, 0.f, 0.f, 0.f},
           m_hasLastControls(false),
@@ -71,59 +70,28 @@ public:
         m_footPos.x += 1.5f * direction * (controls[0]) - 0.5f * direction;
         m_footPos.x = std::max(minX, std::min(maxX, m_footPos.x));
 
-        float Pi = 3.14159f;
-
         // (2) For arm angle:
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
-        m_armAngle = std::max(-2.5f * Pi, std::min(1.5f * Pi, m_armAngle + 0.5f * controls[3] * m_speed));
+        m_armAngle +=  controls[3] * m_speed;
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
 
         // (3) For elbow angle:
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
-        m_elbowAngle = std::max(-0.5f * Pi, std::min(0.5f * Pi, m_elbowAngle + 0.9f * controls[2] * m_speed));
+        m_elbowAngle +=  controls[2] * m_speed;
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
 
         // (4) For wrist angle:
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
-        m_wristAngle = std::max(-0.2f * Pi, std::min(0.2f * Pi, m_wristAngle + controls[1] * m_speed));
+        m_wristAngle += controls[1] * m_speed;
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
 
         // (5) For body angle:
         m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
-        m_bodyAngle = std::max(0.8f * Pi, std::min(1.2f * Pi, m_bodyAngle + 0.4f * controls[4] * m_speed));
+        m_bodyAngle += 0.4f * controls[4] * m_speed;
         m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
 
         if (m_hasLastControls)
         {
-            const float Pi = 3.14159f;
-            const float eps = 0.01f;
-
-            float armMin = -2.5f * Pi;
-            float armMax = 1.5f * Pi;
-            float elbowMin = -0.5f * Pi;
-            float elbowMax = 0.5f * Pi;
-            float wristMin = -0.2f * Pi;
-            float wristMax = 0.2f * Pi;
-            float bodyMin = 0.8f * Pi;
-            float bodyMax = 1.2f * Pi;
-            if (m_flipped)
-            {
-                float newArmMin = -armMax;
-                float newArmMax = -armMin;
-                armMin = newArmMin;
-                armMax = newArmMax;
-
-                float newBodyMin = -bodyMax;
-                float newBodyMax = -bodyMin;
-                bodyMin = newBodyMin;
-                bodyMax = newBodyMax;
-            }
-
-            auto atLimit = [&](float angle, float minVal, float maxVal) -> bool
-            {
-                return angle <= minVal + eps || angle >= maxVal - eps;
-            };
-
             float deltaMomentum = 0.f;
             for (size_t i = 0; i < controls.size(); ++i)
             {
@@ -132,14 +100,6 @@ public:
                 bool sameDirection = (cur >= 0.f) == (prev >= 0.f);
                 float contribution = sameDirection ? std::abs(cur) : -std::abs(cur);
 
-                if (i == 3 && atLimit(m_armAngle, armMin, armMax))
-                    contribution = -contribution;
-                else if (i == 2 && atLimit(m_elbowAngle, elbowMin, elbowMax))
-                    contribution = -contribution;
-                else if (i == 1 && atLimit(m_wristAngle, wristMin, wristMax))
-                    contribution = -contribution;
-                else if (i == 4 && atLimit(m_bodyAngle, bodyMin, bodyMax))
-                    contribution = -contribution;
                 if(i==0){
                     contribution = -5*controls[0];
                 }
@@ -163,8 +123,6 @@ public:
     bool isAlive() const { return m_isAlive; }
     sf::Vector2f getFootPos() const { return m_footPos; }
 
-    int getScore() const {return score;}
-    void incrementScore() {score++;}
     float get_m_momentum() const {return m_momentum;}
 
     // Knockback
@@ -421,7 +379,6 @@ private:
     float m_armLength;
     float m_forearmLength;
     float m_handLength;
-    int score; 
     float m_momentum;
     std::array<float, 5> m_lastControls;
     bool m_hasLastControls;
