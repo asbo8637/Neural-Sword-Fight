@@ -15,6 +15,7 @@ typedef Eigen::RowVectorXf RowVector;
 typedef Eigen::VectorXf ColVector;
 typedef unsigned int uint;
 
+constexpr float kInitialArmAngle = 3.14159f * 0.5f;
 
 ////////////////////////////////////////////////////////////
 // Bot class
@@ -29,7 +30,7 @@ public:
           m_bodyLength(bodyLen),
           m_shoulderOffset(0.4f),
           m_bodyAngle(3.1415f),
-          m_armAngle(0.f),
+          m_armAngle(flipped ? -kInitialArmAngle : kInitialArmAngle),
           m_elbowAngle(0.f),
           m_wristAngle(0.f),
           m_armLength(40.f),
@@ -38,7 +39,6 @@ public:
           score(0),
           m_momentum(0.f),
           m_lastControls{0.f, 0.f, 0.f, 0.f, 0.f},
-          m_hasLastControls(false),
           m_isAlive(true),
           m_flipped(flipped)
     {
@@ -68,107 +68,48 @@ public:
         float direction = m_flipped ? 1.0f : -1.0f;
 
         // (1) Move footX
-        m_footPos.x += 1.5f * direction * (controls[0]) - 0.5f * direction;
+        m_footPos.x += 1.3f * direction * (controls[4]) - 0.3f * direction;
         m_footPos.x = std::max(minX, std::min(maxX, m_footPos.x));
-
-        float Pi = 3.14159f;
 
         // (2) For arm angle:
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
-        m_armAngle = std::max(-2.5f * Pi, std::min(1.5f * Pi, m_armAngle + 0.5f * controls[3] * m_speed));
+        m_armAngle +=  controls[2] * m_speed;
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
 
         // (3) For elbow angle:
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
-        m_elbowAngle = std::max(-0.5f * Pi, std::min(0.5f * Pi, m_elbowAngle + 0.9f * controls[2] * m_speed));
+        m_elbowAngle +=  0.5*controls[1] * m_speed;
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
 
         // (4) For wrist angle:
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
-        m_wristAngle = std::max(-0.2f * Pi, std::min(0.2f * Pi, m_wristAngle + controls[1] * m_speed));
+        m_wristAngle += 0.5*controls[0] * m_speed;
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
 
         // (5) For body angle:
         m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
-        m_bodyAngle = std::max(0.8f * Pi, std::min(1.2f * Pi, m_bodyAngle + 0.4f * controls[4] * m_speed));
+        m_bodyAngle += controls[3] * m_speed;
         m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
 
-        if (m_hasLastControls)
-        {
-            const float Pi = 3.14159f;
-            const float eps = 0.01f;
-
-            float armMin = -2.5f * Pi;
-            float armMax = 1.5f * Pi;
-            float elbowMin = -0.5f * Pi;
-            float elbowMax = 0.5f * Pi;
-            float wristMin = -0.2f * Pi;
-            float wristMax = 0.2f * Pi;
-            float bodyMin = 0.8f * Pi;
-            float bodyMax = 1.2f * Pi;
-            if (m_flipped)
-            {
-                float newArmMin = -armMax;
-                float newArmMax = -armMin;
-                armMin = newArmMin;
-                armMax = newArmMax;
-
-                float newBodyMin = -bodyMax;
-                float newBodyMax = -bodyMin;
-                bodyMin = newBodyMin;
-                bodyMax = newBodyMax;
-            }
-
-            auto atLimit = [&](float angle, float minVal, float maxVal) -> bool
-            {
-                return angle <= minVal + eps || angle >= maxVal - eps;
-            };
-
-            float deltaMomentum = 0.f;
-            for (size_t i = 0; i < controls.size(); ++i)
-            {
-                float cur = controls[i];
-                float prev = m_lastControls[i];
-                bool sameDirection = (cur >= 0.f) == (prev >= 0.f);
-                float contribution = sameDirection ? std::abs(cur) : -std::abs(cur);
-
-                if (i == 3 && atLimit(m_armAngle, armMin, armMax))
-                    contribution = -contribution;
-                else if (i == 2 && atLimit(m_elbowAngle, elbowMin, elbowMax))
-                    contribution = -contribution;
-                else if (i == 1 && atLimit(m_wristAngle, wristMin, wristMax))
-                    contribution = -contribution;
-                else if (i == 4 && atLimit(m_bodyAngle, bodyMin, bodyMax))
-                    contribution = -contribution;
-                if(i==0){
-                    contribution = -5*controls[0];
-                }
-                else{
-                    contribution *= static_cast<float>(i);
-                }
-
-                deltaMomentum += contribution;
-            }
-            m_momentum = 0.9f * m_momentum + 0.1f * deltaMomentum;
-        }
-        else
-        {
-            m_momentum = 0.f;
-            m_hasLastControls = true;
-        }
+        const std::array<float, 5> momentumWeights = {1.f, 2.f, 3.f, 10.f, 2.f};
+        float momentumSum = 0.f;
+        for (size_t i = 0; i < controls.size(); ++i)
+            momentumSum += std::abs(controls[i]) * momentumWeights[i];
+        m_momentum += momentumSum;
         m_lastControls = controls;
     }
 
     void kill() { m_isAlive = false; }
     bool isAlive() const { return m_isAlive; }
     sf::Vector2f getFootPos() const { return m_footPos; }
+    bool isFlipped() const { return m_flipped; }
 
     int getScore() const {return score;}
-    void incrementScore() {score++;}
+    void incrementScore(float change) {score+=change;}
     float get_m_momentum() const {return m_momentum;}
 
     // Knockback
-     void applyKnockback(float disp)
+    void applyKnockback(float disp)
     {
         if (m_isAlive)
         {
@@ -221,9 +162,11 @@ public:
 
         auto normalizeAngle = [](float angle) -> float
         {
-            if (angle < 0)
-                angle += 2.0f * 3.14159f;
-            return angle / (2.0f * 3.14159f);
+            const float twoPi = 2.0f * 3.14159f;
+            float wrapped = std::fmod(angle, twoPi);
+            if (wrapped < 0.f)
+                wrapped += twoPi;
+            return wrapped / twoPi;
         };
 
         float normBodyAngle = normalizeAngle(temp_bodyAngle);
@@ -269,11 +212,11 @@ public:
         window.draw(rect);
     }
 
-    void drawFace(sf::RenderWindow &window, const sf::Vector2f &faceCenter) {
+    void drawFace(sf::RenderWindow &window, const sf::Vector2f &faceCenter, sf::Color faceColor) {
         // Face circle.
         float faceRadius = 15.f;
         sf::CircleShape face(faceRadius);
-        face.setFillColor(m_faceColor);
+        face.setFillColor(faceColor);
         face.setOutlineThickness(2.f);
         face.setOutlineColor(sf::Color::Black);
         // Center the face by setting its origin to its center.
@@ -305,10 +248,16 @@ public:
     }
     
 
-    void draw(sf::RenderWindow &window)
+    void draw(sf::RenderWindow &window, bool drawIfDead = false, const sf::Color *overrideColor = nullptr)
     {
-        if (!m_isAlive)
+        if (!m_isAlive && !drawIfDead)
             return;
+
+        sf::Color bodyColor = overrideColor ? *overrideColor : sf::Color::Green;
+        sf::Color armColor = overrideColor ? *overrideColor : sf::Color::White;
+        sf::Color jointColor = overrideColor ? *overrideColor : sf::Color::Red;
+        sf::Color swordColor = overrideColor ? *overrideColor : m_faceColor;
+        sf::Color faceColor = overrideColor ? *overrideColor : m_faceColor;
 
         sf::Vector2f headPos = getHeadPos();
         sf::Vector2f shoulderPos = getShoulderPos();
@@ -317,19 +266,20 @@ public:
         sf::Vector2f swordTip = getSwordTip(wristPos);
 
         // Body
-        drawLine(window, m_footPos, headPos, sf::Color::Green);
+        drawLine(window, m_footPos, headPos, bodyColor);
 
         // Arm
-        drawLine(window, shoulderPos, elbowPos, sf::Color::White);
-        drawLine(window, elbowPos, wristPos, sf::Color::White);
-        drawSwordRectangle(window, wristPos, swordTip, m_faceColor);
+        drawLine(window, shoulderPos, elbowPos, armColor);
+        drawLine(window, elbowPos, wristPos, armColor);
+        drawSwordRectangle(window, wristPos, swordTip, swordColor);
         
 
         // Circles
+        m_jointCircle.setFillColor(jointColor);
         m_jointCircle.setPosition(m_footPos);
         window.draw(m_jointCircle);
 
-        drawFace(window, headPos);
+        drawFace(window, headPos, faceColor);
 
 
         m_jointCircle.setPosition(shoulderPos);
@@ -424,7 +374,6 @@ private:
     int score; 
     float m_momentum;
     std::array<float, 5> m_lastControls;
-    bool m_hasLastControls;
 
     bool m_isAlive;
     bool m_flipped;

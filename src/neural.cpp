@@ -79,7 +79,7 @@ public:
     }
 
     // Forward propagation
-    void propagateForward(RowVector &input)
+    void propagateForward(const RowVector &input)
     {
         neuronLayers.front()->block(0, 0, 1, neuronLayers.front()->size() - 1) = input;
         for (size_t i = 1; i < topology.size(); i++)
