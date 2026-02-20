@@ -80,7 +80,7 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
 
     if (linesIntersect(aSwordStart, aSwordEnd, bSwordStart, bSwordEnd))
     {
-        const float knockbackBase = 500.f;
+        const float knockbackBase = 300.f;
         float Bforce = -knockbackBase * (800 - B.getFootPos().x) / 800.f;
         float Aforce = knockbackBase * A.getFootPos().x / 800.f;
         float momentum_dif = A.get_m_momentum() - B.get_m_momentum();
@@ -177,12 +177,6 @@ struct RoundResult
 struct TrainConfig
 {
     int populationSize;
-    int stepsPerMatch;
-    int batchPasses; // Full round-robin passes per generation
-    int eliteCount;
-    int selectionPool;
-    int tournamentSize;
-    int renderEvery;
     bool headless;
     Scalar evolutionRate;
     Scalar mutationRate;
@@ -330,7 +324,7 @@ std::vector<neural> createInitialPopulation(const TrainConfig &cfg)
     return population;
 }
 
-void generationLearn(float swordA, float speedA, float bodyA, const TrainConfig &cfg)
+void generationLearn(float swordA, float speedA, float bodyA, int maxStepsPerRound, const TrainConfig &cfg)
 {
     const float gameWidth = 800.f;
     const float gameHeight = 600.f;
@@ -374,72 +368,76 @@ void generationLearn(float swordA, float speedA, float bodyA, const TrainConfig 
         return;
     }
     std::vector<neural> population = createInitialPopulation(cfg);
-    std::vector<float> fitness(popSize, 0.f);
-    std::vector<int> order(popSize);
-    std::vector<int> ranked(popSize);
     std::random_device rd;
     std::mt19937 rng(rd());
-    const float winBonus = 40.0f;
-    const float scoreWeight = 0.1f;
-    auto applyMatchFitness = [&](int idxA, int idxB, const RoundResult &result)
-    {
-        float scale = result.timedOut ? 0.5f : 1.0f;
-        float scoreA = scoreWeight * static_cast<float>(result.scoreA);
-        float scoreB = scoreWeight * static_cast<float>(result.scoreB);
-        float bonusA = (result.winner == 1) ? winBonus : 0.0f;
-        float bonusB = (result.winner == 2) ? winBonus : 0.0f;
-        fitness[idxA] += scale * (scoreA + bonusA);
-        fitness[idxB] += scale * (scoreB + bonusB);
-    };
+    int winner = 0;
 
     while (true)
     {
         rounds++;
-        std::fill(fitness.begin(), fitness.end(), 0.f);
 
-        const int pairable = popSize - (popSize % 2);
-        const int pairCount = pairable / 2;
-
-        for (int pass = 0; pass < std::max(1, cfg.batchPasses); ++pass)
+        if (rounds % 12 == 0)
         {
-            std::iota(order.begin(), order.end(), 0);
-            std::shuffle(order.begin(), order.end(), rng);
-
-            std::atomic<int> nextPair(0);
-            unsigned int hwThreads = std::thread::hardware_concurrency();
-            int workerCount = 0;
-            if (pairCount > 1)
+            std::shuffle(population.begin(), population.end(), rng);
+        }
+        else
+        {
+            for (int base = 0; base < popSize; base += popSize / 8)
             {
-                if (hwThreads == 0)
-                    workerCount = 1;
-                else
-                    workerCount = static_cast<int>(std::max(1u, hwThreads - 1));
-                workerCount = std::min(workerCount, pairCount - 1);
+                int end = std::min(base + popSize / 8, popSize);
+                std::shuffle(population.begin() + base, population.begin() + end, rng);
             }
+        }
 
-            std::vector<std::thread> workers;
-            workers.reserve(workerCount);
-            for (int w = 0; w < workerCount; ++w)
-            {
-                workers.emplace_back([&]()
-                                     {
-                    float dummyDelay = 0.f;
-                    bool dummyPaused = false;
-                    while (true)
-                    {
-                        int pairIndex = nextPair.fetch_add(1);
-                        if (pairIndex >= pairCount)
-                            break;
-                        int i = order[pairIndex * 2];
-                        int j = order[pairIndex * 2 + 1];
-                        Bot localA(100.f, 400.f, swordA, speedA, bodyA, false);
-                        Bot localB(600.f, 400.f, swordA, speedA, bodyA, true);
-                        RoundResult result = one_round(population[i], population[j], localA, localB, cfg.stepsPerMatch, false, nullptr, dummyDelay, dummyPaused);
-                        applyMatchFitness(i, j, result);
-                    } });
-            }
+        const int pairCount = popSize / 2;
+        std::vector<RoundResult> results(pairCount);
+        int firstPairForWorkers = cfg.headless ? 0 : 1;
+        std::atomic<int> nextPair(firstPairForWorkers);
 
-            // Main thread takes a slice too.
+        unsigned int hwThreads = std::thread::hardware_concurrency();
+        int workerCount = 0;
+        if (pairCount > firstPairForWorkers)
+        {
+            if (hwThreads == 0)
+                workerCount = 1;
+            else
+                workerCount = static_cast<int>(std::max(1u, hwThreads - 1));
+            workerCount = std::min(workerCount, pairCount - firstPairForWorkers);
+        }
+
+        std::vector<std::thread> workers;
+        workers.reserve(workerCount);
+        for (int w = 0; w < workerCount; ++w)
+        {
+            workers.emplace_back([&]()
+                                 {
+                float dummyDelay = 0.f;
+                bool dummyPaused = false;
+                while (true)
+                {
+                    int pairIndex = nextPair.fetch_add(1);
+                    if (pairIndex >= pairCount)
+                        break;
+                    int i = pairIndex * 2;
+                    Bot localA(250.f, 400.f, swordA, speedA, bodyA, false);
+                    Bot localB(550.f, 400.f, swordA, speedA, bodyA, true);
+                    results[pairIndex] = one_round(population[i], population[i + 1], localA, localB, maxStepsPerRound, false, nullptr, dummyDelay, dummyPaused);
+                } });
+        }
+
+        if (!cfg.headless)
+        {
+            if (!window || !window->isOpen())
+                return;
+
+            botA = Bot(250.f, 400.f, swordA, speedA, bodyA, false);
+            botB = Bot(550.f, 400.f, swordA, speedA, bodyA, true);
+            results[0] = one_round(population[0], population[1], botA, botB, maxStepsPerRound, true, window.get(), playbackDelayMs, renderPaused);
+            if (!window->isOpen())
+                return;
+        }
+        else
+        {
             float dummyDelay = 0.f;
             bool dummyPaused = false;
             while (true)
@@ -447,77 +445,44 @@ void generationLearn(float swordA, float speedA, float bodyA, const TrainConfig 
                 int pairIndex = nextPair.fetch_add(1);
                 if (pairIndex >= pairCount)
                     break;
-                int i = order[pairIndex * 2];
-                int j = order[pairIndex * 2 + 1];
+                int i = pairIndex * 2;
                 Bot localA(250.f, 400.f, swordA, speedA, bodyA, false);
                 Bot localB(550.f, 400.f, swordA, speedA, bodyA, true);
-                RoundResult result = one_round(population[i], population[j], localA, localB, cfg.stepsPerMatch, false, nullptr, dummyDelay, dummyPaused);
-                applyMatchFitness(i, j, result);
+                results[pairIndex] = one_round(population[i], population[i + 1], localA, localB, maxStepsPerRound, false, nullptr, dummyDelay, dummyPaused);
             }
-
-            for (auto &t : workers)
-                t.join();
         }
 
-        std::iota(ranked.begin(), ranked.end(), 0);
-        std::sort(ranked.begin(), ranked.end(), [&](int a, int b)
-                  { return fitness[a] > fitness[b]; });
+        for (auto &t : workers)
+            t.join();
 
-        float avgFitness = std::accumulate(fitness.begin(), fitness.end(), 0.f) / static_cast<float>(popSize);
-        std::cout << "Gen " << rounds
-                  << " best=" << fitness[ranked[0]]
-                  << " avg=" << avgFitness << std::endl;
-
-        if (!cfg.headless && window && window->isOpen() && (rounds % std::max(1, cfg.renderEvery) == 0))
+        for (int pairIndex = 0; pairIndex < pairCount; ++pairIndex)
         {
-            botA = Bot(250.f, 400.f, swordA, speedA, bodyA, false);
-            botB = Bot(550.f, 400.f, swordA, speedA, bodyA, true);
-            const int renderPoolSize = std::min(100, popSize);
-            std::uniform_int_distribution<int> renderRankDist(0, renderPoolSize - 1);
-            int rankA = renderRankDist(rng);
-            int rankB = renderRankDist(rng);
-            while (rankB == rankA)
-                rankB = renderRankDist(rng);
-            int renderA = ranked[rankA];
-            int renderB = ranked[rankB];
-            one_round(population[renderA], population[renderB], botA, botB, cfg.stepsPerMatch, true, window.get(), playbackDelayMs, renderPaused);
-            if (!window->isOpen())
-                return;
-        }
+            int i = pairIndex * 2;
+            winner = results[pairIndex].winner;
 
-        int eliteCount = std::min(cfg.eliteCount, popSize);
-        int poolCount = std::min(cfg.selectionPool, popSize);
-        if (poolCount < eliteCount)
-            poolCount = eliteCount;
-        int tourSize = std::min(cfg.tournamentSize, poolCount);
-        std::uniform_int_distribution<int> poolDist(0, poolCount - 1);
-
-        auto selectParent = [&]() -> int
-        {
-            int best = ranked[poolDist(rng)];
-            for (int t = 1; t < tourSize; ++t)
+            if (pairIndex == 0)
             {
-                int cand = ranked[poolDist(rng)];
-                if (fitness[cand] > fitness[best])
-                    best = cand;
+                if (winner == 1)
+                    std::cout << "A WINS! Generation: " << rounds
+                              << " | A score: " << results[pairIndex].scoreA
+                              << " / B score: " << results[pairIndex].scoreB << std::endl;
+                else if (winner == 2)
+                    std::cout << "B WINS! Generation: " << rounds
+                              << " | A score: " << results[pairIndex].scoreA
+                              << " / B score: " << results[pairIndex].scoreB << std::endl;
             }
-            return best;
-        };
 
-        std::vector<neural> nextGen;
-        nextGen.reserve(popSize);
-        for (int e = 0; e < eliteCount; ++e)
-            nextGen.push_back(population[ranked[e]].clone());
-
-        while (static_cast<int>(nextGen.size()) < popSize)
-        {
-            int parentIndex = selectParent();
-            neural child = population[parentIndex].clone();
-            child.updateWeights();
-            nextGen.push_back(std::move(child));
+            if (winner == 1)
+            {
+                population[i + 1] = population[i].clone();
+                population[i + 1].updateWeights();
+            }
+            else if (winner == 2)
+            {
+                population[i] = population[i + 1].clone();
+                population[i].updateWeights();
+            }
         }
-
-        population.swap(nextGen);
     }
 }
 
@@ -526,19 +491,13 @@ int main()
     srand(static_cast<unsigned int>(time(0)));
     TrainConfig cfg;
     cfg.populationSize = 1000;
-    cfg.stepsPerMatch = 500;
-    cfg.batchPasses = 3;
-    cfg.eliteCount = 20;
-    cfg.selectionPool = 240;
-    cfg.tournamentSize = 4;
     cfg.evolutionRate = 0.03f;
-    cfg.mutationRate = 0.08f;
-    cfg.topology = {26, 400, 5};
+    cfg.mutationRate = 0.15f;
+    cfg.topology = {26, 1000, 5};
     cfg.headless = false;
-    cfg.renderEvery = 1;
+    const int maxStepsPerRound = 600;
 
-
-    generationLearn(100.f, 0.08f, 100.f, cfg);
+    generationLearn(100.f, 0.08f, 100.f, maxStepsPerRound, cfg);
 
     return 0;
 }
