@@ -77,6 +77,8 @@ void checkSwordSwordCollision(Bot &A, Bot &B)
     B.getSwordLine(bSwordStart, bSwordEnd);
     bSwordStart.x += 1.f;
     aSwordStart.x -= 1.f;
+    bSwordStart.y += 1.f;
+    aSwordStart.y -= 1.f;
 
     if (linesIntersect(aSwordStart, aSwordEnd, bSwordStart, bSwordEnd))
     {
@@ -368,6 +370,9 @@ void generationLearn(float swordA, float speedA, float bodyA, int maxStepsPerRou
         return;
     }
     std::vector<neural> population = createInitialPopulation(cfg);
+    std::vector<double> botAges(popSize);
+    for (int i = 0; i < popSize; ++i)
+        botAges[i] = 1.0 + static_cast<double>(i) / static_cast<double>(popSize);
     std::random_device rd;
     std::mt19937 rng(rd());
     int winner = 0;
@@ -376,22 +381,56 @@ void generationLearn(float swordA, float speedA, float bodyA, int maxStepsPerRou
     {
         rounds++;
 
+        if (rounds > 1)
+        {
+            for (double &age : botAges)
+                age += 1.0;
+        }
+
+        auto shuffleRange = [&](int begin, int end)
+        {
+            for (int k = end - 1; k > begin; --k)
+            {
+                std::uniform_int_distribution<int> dist(begin, k);
+                int j = dist(rng);
+                std::swap(population[k], population[j]);
+                std::swap(botAges[k], botAges[j]);
+            }
+        };
+
         if (rounds % 12 == 0)
         {
-            std::shuffle(population.begin(), population.end(), rng);
+            shuffleRange(0, popSize);
         }
         else
         {
             for (int base = 0; base < popSize; base += popSize / 8)
             {
                 int end = std::min(base + popSize / 8, popSize);
-                std::shuffle(population.begin() + base, population.begin() + end, rng);
+                shuffleRange(base, end);
+            }
+        }
+
+        int oldestA = 0;
+        int oldestB = 1;
+        if (botAges[oldestB] > botAges[oldestA])
+            std::swap(oldestA, oldestB);
+        for (int idx = 2; idx < popSize; ++idx)
+        {
+            if (botAges[idx] > botAges[oldestA])
+            {
+                oldestB = oldestA;
+                oldestA = idx;
+            }
+            else if (botAges[idx] > botAges[oldestB])
+            {
+                oldestB = idx;
             }
         }
 
         const int pairCount = popSize / 2;
         std::vector<RoundResult> results(pairCount);
-        int firstPairForWorkers = cfg.headless ? 0 : 1;
+        int firstPairForWorkers = 0;
         std::atomic<int> nextPair(firstPairForWorkers);
 
         unsigned int hwThreads = std::thread::hardware_concurrency();
@@ -425,6 +464,10 @@ void generationLearn(float swordA, float speedA, float bodyA, int maxStepsPerRou
                 } });
         }
 
+        RoundResult displayResult{0, false, 0, 0};
+        double displayAgeAActual = botAges[oldestA];
+        double displayAgeBActual = botAges[oldestB];
+
         if (!cfg.headless)
         {
             if (!window || !window->isOpen())
@@ -432,24 +475,35 @@ void generationLearn(float swordA, float speedA, float bodyA, int maxStepsPerRou
 
             botA = Bot(250.f, 400.f, swordA, speedA, bodyA, false);
             botB = Bot(550.f, 400.f, swordA, speedA, bodyA, true);
-            results[0] = one_round(population[0], population[1], botA, botB, maxStepsPerRound, true, window.get(), playbackDelayMs, renderPaused);
+            displayResult = one_round(population[oldestA], population[oldestB], botA, botB, maxStepsPerRound, true, window.get(), playbackDelayMs, renderPaused);
             if (!window->isOpen())
                 return;
+
+            if (displayResult.winner == 1)
+                std::cout << "A WINS! Generation: " << rounds
+                          << " | A age: " << displayAgeAActual
+                          << " / B age: " << displayAgeBActual
+                          << " | A score: " << displayResult.scoreA
+                          << " / B score: " << displayResult.scoreB << std::endl;
+            else if (displayResult.winner == 2)
+                std::cout << "B WINS! Generation: " << rounds
+                          << " | A age: " << displayAgeAActual
+                          << " / B age: " << displayAgeBActual
+                          << " | A score: " << displayResult.scoreA
+                          << " / B score: " << displayResult.scoreB << std::endl;
         }
-        else
+
+        float dummyDelay = 0.f;
+        bool dummyPaused = false;
+        while (true)
         {
-            float dummyDelay = 0.f;
-            bool dummyPaused = false;
-            while (true)
-            {
-                int pairIndex = nextPair.fetch_add(1);
-                if (pairIndex >= pairCount)
-                    break;
-                int i = pairIndex * 2;
-                Bot localA(250.f, 400.f, swordA, speedA, bodyA, false);
-                Bot localB(550.f, 400.f, swordA, speedA, bodyA, true);
-                results[pairIndex] = one_round(population[i], population[i + 1], localA, localB, maxStepsPerRound, false, nullptr, dummyDelay, dummyPaused);
-            }
+            int pairIndex = nextPair.fetch_add(1);
+            if (pairIndex >= pairCount)
+                break;
+            int i = pairIndex * 2;
+            Bot localA(250.f, 400.f, swordA, speedA, bodyA, false);
+            Bot localB(550.f, 400.f, swordA, speedA, bodyA, true);
+            results[pairIndex] = one_round(population[i], population[i + 1], localA, localB, maxStepsPerRound, false, nullptr, dummyDelay, dummyPaused);
         }
 
         for (auto &t : workers)
@@ -459,15 +513,21 @@ void generationLearn(float swordA, float speedA, float bodyA, int maxStepsPerRou
         {
             int i = pairIndex * 2;
             winner = results[pairIndex].winner;
+            double fighterAgeAActual = botAges[i];
+            double fighterAgeBActual = botAges[i + 1];
 
-            if (pairIndex == 0)
+            if (cfg.headless && pairIndex == 0)
             {
                 if (winner == 1)
                     std::cout << "A WINS! Generation: " << rounds
+                              << " | A age: " << fighterAgeAActual
+                              << " / B age: " << fighterAgeBActual
                               << " | A score: " << results[pairIndex].scoreA
                               << " / B score: " << results[pairIndex].scoreB << std::endl;
                 else if (winner == 2)
                     std::cout << "B WINS! Generation: " << rounds
+                              << " | A age: " << fighterAgeAActual
+                              << " / B age: " << fighterAgeBActual
                               << " | A score: " << results[pairIndex].scoreA
                               << " / B score: " << results[pairIndex].scoreB << std::endl;
             }
@@ -476,11 +536,15 @@ void generationLearn(float swordA, float speedA, float bodyA, int maxStepsPerRou
             {
                 population[i + 1] = population[i].clone();
                 population[i + 1].updateWeights();
+                double deadDecimal = static_cast<double>(i + 1) / static_cast<double>(popSize);
+                botAges[i + 1] = deadDecimal;
             }
             else if (winner == 2)
             {
                 population[i] = population[i + 1].clone();
                 population[i].updateWeights();
+                double deadDecimal = static_cast<double>(i) / static_cast<double>(popSize);
+                botAges[i] = deadDecimal;
             }
         }
     }
@@ -493,7 +557,7 @@ int main()
     cfg.populationSize = 1000;
     cfg.evolutionRate = 0.03f;
     cfg.mutationRate = 0.15f;
-    cfg.topology = {26, 1000, 5};
+    cfg.topology = {26, 1000, p5};
     cfg.headless = false;
     const int maxStepsPerRound = 600;
 

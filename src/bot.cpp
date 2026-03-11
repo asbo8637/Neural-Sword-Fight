@@ -53,13 +53,24 @@ public:
         m_faceColor = m_flipped ? sf::Color::Blue : sf::Color::Red;
     }
 
-    // New update method: we pass in 5 values (0..1)
+    // New update method: we pass in 5 values (-1..1)
     // [0] => foot X, [1] => armAngle, [2] => elbowAngle, [3] => wristAngle, [4] => ???
     void updateFromNN(const std::array<float, 5> &controls)
     {
         if (!m_isAlive)
             return;
-        
+
+        std::array<float, 5> quantizedControls;
+        for (size_t i = 0; i < controls.size(); ++i)
+        {
+            float clamped = std::max(-1.0f, std::min(1.0f, controls[i]));
+            constexpr float step = 1.0f / 8.0f;
+            float snapped = std::round(clamped / step) * step;
+            if (std::abs(snapped) <= (step * 0.5f))
+                snapped = 0.0f;
+            quantizedControls[i] = std::max(-1.0f, std::min(1.0f, snapped));
+        }
+
         // Define boundaries for the foot's x position.
         const float minX = 100.f;
         const float maxX = 700.f;
@@ -68,35 +79,35 @@ public:
         float direction = m_flipped ? 1.0f : -1.0f;
 
         // (1) Move footX
-        m_footPos.x += 1.3f * direction * (controls[4]) - 0.3f * direction;
+        m_footPos.x += 2.0f * direction * (quantizedControls[4]) - 0.5f * direction;
         m_footPos.x = std::max(minX, std::min(maxX, m_footPos.x));
 
         // (2) For arm angle:
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
-        m_armAngle +=  controls[2] * m_speed;
+        m_armAngle += quantizedControls[2] * m_speed;
         m_armAngle = m_flipped ? (-m_armAngle) : m_armAngle;
 
         // (3) For elbow angle:
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
-        m_elbowAngle +=  0.5*controls[1] * m_speed;
+        m_elbowAngle += 0.5f * quantizedControls[1] * m_speed;
         m_elbowAngle = m_flipped ? (-m_elbowAngle) : m_elbowAngle;
 
         // (4) For wrist angle:
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
-        m_wristAngle += 0.5*controls[0] * m_speed;
+        m_wristAngle += 0.5f * quantizedControls[0] * m_speed;
         m_wristAngle = m_flipped ? (-m_wristAngle) : m_wristAngle;
 
         // (5) For body angle:
         m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
-        m_bodyAngle += controls[3] * m_speed;
+        m_bodyAngle += quantizedControls[3] * m_speed;
         m_bodyAngle = m_flipped ? (-m_bodyAngle) : m_bodyAngle;
 
         const std::array<float, 5> momentumWeights = {1.f, 2.f, 3.f, 10.f, 2.f};
         float momentumSum = 0.f;
-        for (size_t i = 0; i < controls.size(); ++i)
-            momentumSum += std::abs(controls[i]) * momentumWeights[i];
+        for (size_t i = 0; i < quantizedControls.size(); ++i)
+            momentumSum += std::abs(quantizedControls[i]) * momentumWeights[i];
         m_momentum += momentumSum;
-        m_lastControls = controls;
+        m_lastControls = quantizedControls;
     }
 
     void kill() { m_isAlive = false; }
@@ -104,9 +115,9 @@ public:
     sf::Vector2f getFootPos() const { return m_footPos; }
     bool isFlipped() const { return m_flipped; }
 
-    int getScore() const {return score;}
-    void incrementScore(float change) {score+=change;}
-    float get_m_momentum() const {return m_momentum;}
+    int getScore() const { return score; }
+    void incrementScore(float change) { score += change; }
+    float get_m_momentum() const { return m_momentum; }
 
     // Knockback
     void applyKnockback(float disp)
@@ -185,8 +196,7 @@ public:
             m_lastControls[1],
             m_lastControls[2],
             m_lastControls[3],
-            m_lastControls[4]
-        };
+            m_lastControls[4]};
     }
 
     void drawSwordRectangle(sf::RenderWindow &window, const sf::Vector2f &wristPos, const sf::Vector2f &swordTip, sf::Color color)
@@ -212,7 +222,8 @@ public:
         window.draw(rect);
     }
 
-    void drawFace(sf::RenderWindow &window, const sf::Vector2f &faceCenter, sf::Color faceColor) {
+    void drawFace(sf::RenderWindow &window, const sf::Vector2f &faceCenter, sf::Color faceColor)
+    {
         // Face circle.
         float faceRadius = 15.f;
         sf::CircleShape face(faceRadius);
@@ -223,7 +234,7 @@ public:
         face.setOrigin(faceRadius, faceRadius);
         face.setPosition(faceCenter);
         window.draw(face);
-    
+
         // Eyes: two small circles.
         float eyeRadius = 2.f;
         sf::CircleShape leftEye(eyeRadius);
@@ -233,20 +244,19 @@ public:
         // Position eyes relative to the faceCenter.
         leftEye.setOrigin(eyeRadius, eyeRadius);
         rightEye.setOrigin(eyeRadius, eyeRadius);
-        leftEye.setPosition(faceCenter.x - faceRadius/2, faceCenter.y - faceRadius/3);
-        rightEye.setPosition(faceCenter.x + faceRadius/2, faceCenter.y - faceRadius/3);
+        leftEye.setPosition(faceCenter.x - faceRadius / 2, faceCenter.y - faceRadius / 3);
+        rightEye.setPosition(faceCenter.x + faceRadius / 2, faceCenter.y - faceRadius / 3);
         window.draw(leftEye);
         window.draw(rightEye);
-    
+
         // Mouth: a simple line for a smile.
         sf::VertexArray mouth(sf::Lines, 2);
-        mouth[0].position = sf::Vector2f(faceCenter.x - faceRadius/2, faceCenter.y + faceRadius/4);
+        mouth[0].position = sf::Vector2f(faceCenter.x - faceRadius / 2, faceCenter.y + faceRadius / 4);
         mouth[0].color = sf::Color::Black;
-        mouth[1].position = sf::Vector2f(faceCenter.x + faceRadius/2, faceCenter.y + faceRadius/4);
+        mouth[1].position = sf::Vector2f(faceCenter.x + faceRadius / 2, faceCenter.y + faceRadius / 4);
         mouth[1].color = sf::Color::Black;
         window.draw(mouth);
     }
-    
 
     void draw(sf::RenderWindow &window, bool drawIfDead = false, const sf::Color *overrideColor = nullptr)
     {
@@ -272,7 +282,6 @@ public:
         drawLine(window, shoulderPos, elbowPos, armColor);
         drawLine(window, elbowPos, wristPos, armColor);
         drawSwordRectangle(window, wristPos, swordTip, swordColor);
-        
 
         // Circles
         m_jointCircle.setFillColor(jointColor);
@@ -280,7 +289,6 @@ public:
         window.draw(m_jointCircle);
 
         drawFace(window, headPos, faceColor);
-
 
         m_jointCircle.setPosition(shoulderPos);
         window.draw(m_jointCircle);
@@ -299,7 +307,6 @@ private:
         float dy = m_bodyLength * std::cos(m_bodyAngle);
         return sf::Vector2f(m_footPos.x + dx, m_footPos.y + dy);
     }
-
 
     // Returns angle in radians between two vectors
     float angleBetween(const sf::Vector2f &v1, const sf::Vector2f &v2) const
@@ -371,7 +378,7 @@ private:
     float m_armLength;
     float m_forearmLength;
     float m_handLength;
-    int score; 
+    int score;
     float m_momentum;
     std::array<float, 5> m_lastControls;
 
